@@ -348,6 +348,23 @@ class _ShortcutBar extends StatelessWidget {
   /// so a set that numbers its channels differently still works.
   static const List<String> _quick = ['Netflix', 'YouTube', 'Prime Video'];
 
+  /// Runs a launch and reports failure as a snack bar.
+  ///
+  /// The error banner lives at the top of a scrolling page, so a failure
+  /// triggered from these controls — which sit at the bottom — used to leave no
+  /// visible trace at all. A snack bar shows wherever the user is looking.
+  static Future<void> _launch(
+    BuildContext context,
+    Future<bool> Function() action,
+    String failureMessage,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await action();
+    if (!ok) {
+      messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<RemoteController>();
@@ -369,7 +386,11 @@ class _ShortcutBar extends StatelessWidget {
             for (final name in _quick)
               ActionChip(
                 label: Text(name),
-                onPressed: () => controller.launchChannelNamed(name),
+                onPressed: () => _launch(
+                  context,
+                  () => controller.launchChannelNamed(name),
+                  '$name did not open',
+                ),
               ),
             ActionChip(
               avatar: const Icon(Icons.grid_view, size: 18),
@@ -424,8 +445,16 @@ class _ShortcutBar extends StatelessWidget {
                   // different kind of thing, so they are labelled.
                   subtitle: channel.isInput ? const Text('TV input') : null,
                   onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
                     Navigator.of(sheetContext).pop();
-                    await controller.launchChannel(channel.id);
+                    final ok = await controller.launchChannel(channel.id);
+                    if (!ok) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text('${channel.name} did not open'),
+                        ),
+                      );
+                    }
                   },
                 );
               },

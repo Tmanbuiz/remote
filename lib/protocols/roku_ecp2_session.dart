@@ -200,10 +200,43 @@ class RokuEcp2Session {
     }
   }
 
+  /// The remote key that selects a TV input, or null for a normal channel.
+  ///
+  /// Inputs cannot be launched. The TV answers `launch` with **403 Forbidden**
+  /// for any `tvinput.*` id — verified against a TCL Roku TV, where the same
+  /// id launched over plain HTTP succeeds. They are only reachable over ECP-2
+  /// as key presses, even though `query-apps` lists them alongside real
+  /// channels with no hint of the difference.
+  static String? inputKeyFor(String channelId) {
+    if (!channelId.startsWith('tvinput.')) return null;
+    final input = channelId.substring('tvinput.'.length).toLowerCase();
+    if (RegExp(r'^hdmi[1-4]$').hasMatch(input)) {
+      return 'InputHDMI${input.substring(4)}';
+    }
+    return switch (input) {
+      'tuner' || 'dtv' || 'antenna' => 'InputTuner',
+      'av1' || 'av' || 'composite' => 'InputAV1',
+      _ => null,
+    };
+  }
+
   Future<void> launch(String channelId) async {
     if (!isChannelId(channelId)) {
       throw ArgumentError('Unsupported channel id: $channelId');
     }
+
+    // Inputs take the key-press path; only real channels can be launched.
+    if (channelId.startsWith('tvinput.')) {
+      final inputKey = inputKeyFor(channelId);
+      if (inputKey == null) {
+        // Falling through to launch would return 403 and surface as the
+        // misleading "not installed" message.
+        throw RemoteTransportException('This TV input cannot be selected.');
+      }
+      await press(inputKey);
+      return;
+    }
+
     final reply = await _call(
       'launch',
       {'param-channel-id': channelId},

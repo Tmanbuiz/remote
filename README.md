@@ -34,6 +34,12 @@ SHA-1 challenge/response. This is the channel Roku's own app uses, and the TV
 honours it in Limited mode. Discovery stays on HTTP, since `device-info`
 remains readable.
 
+**TV inputs are not launchable over ECP-2.** The TV answers `launch` with 403
+Forbidden for any `tvinput.*` id, while accepting the same id over plain HTTP.
+Inputs have to go through `key-press InputHDMI2` instead, even though
+`query-apps` lists them alongside real channels with nothing to mark the
+difference. Verified on a TCL Roku TV; see `inputKeyFor`.
+
 The authentication is pinned by a test against a challenge/response pair
 captured from a real handshake, so a mistake in the port fails loudly in CI
 rather than silently on the sofa.

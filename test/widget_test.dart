@@ -108,6 +108,34 @@ void main() {
     });
   });
 
+  group('TV inputs', () {
+    // Verified against a TCL Roku TV: `launch` with a tvinput.* id answers 403
+    // Forbidden and the TV does not switch, while `key-press InputHDMI1`
+    // answers 200 and it does. query-apps lists inputs and channels together
+    // with nothing to distinguish how they must be selected.
+    test('maps HDMI inputs onto their key names', () {
+      expect(RokuEcp2Session.inputKeyFor('tvinput.hdmi1'), 'InputHDMI1');
+      expect(RokuEcp2Session.inputKeyFor('tvinput.hdmi2'), 'InputHDMI2');
+      expect(RokuEcp2Session.inputKeyFor('tvinput.hdmi4'), 'InputHDMI4');
+    });
+
+    test('maps the tuner and composite inputs', () {
+      expect(RokuEcp2Session.inputKeyFor('tvinput.tuner'), 'InputTuner');
+      expect(RokuEcp2Session.inputKeyFor('tvinput.dtv'), 'InputTuner');
+      expect(RokuEcp2Session.inputKeyFor('tvinput.av1'), 'InputAV1');
+    });
+
+    test('returns null for real channels, which launch normally', () {
+      expect(RokuEcp2Session.inputKeyFor('12'), isNull);
+      expect(RokuEcp2Session.inputKeyFor('837'), isNull);
+    });
+
+    test('returns null for an input it does not recognise', () {
+      expect(RokuEcp2Session.inputKeyFor('tvinput.hdmi9'), isNull);
+      expect(RokuEcp2Session.inputKeyFor('tvinput.mystery'), isNull);
+    });
+  });
+
   group('Channel list parsing', () {
     const realistic = '''
 <apps>
