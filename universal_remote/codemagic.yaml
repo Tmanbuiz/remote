@@ -1,0 +1,128 @@
+# Cloud iOS builds — this file is why the project does not need a Mac.
+#
+# Codemagic runs these workflows on its own macOS machines with Xcode already
+# installed. You push to git from Windows; the signed .ipa comes back. The only
+# thing that cannot be moved to the cloud is the Apple Developer membership
+# ($99/yr), which is what allows an app to install on a physical iPhone at all.
+#
+# Setup, once:
+#   1. codemagic.io -> add this repository
+#   2. Teams -> Code signing identities -> connect your Apple Developer account
+#   3. Create an App Store Connect API key, add it as `codemagic` integration
+#   4. Set BUNDLE_ID below to the identifier you registered with Apple
+#
+# The `ios-debug` workflow is the one to use while developing: it produces an
+# .ipa you can install over the air, with no App Store review.
+
+definitions:
+  env_versions: &env_versions
+    flutter: stable
+    xcode: latest
+    cocoapods: default
+
+workflows:
+  ios-debug:
+    name: iOS ad-hoc build (install on your own iPhone)
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    environment:
+      <<: *env_versions
+      ios_signing:
+        distribution_type: ad_hoc
+        bundle_identifier: com.wiantribe.universalremote
+      vars:
+        BUNDLE_ID: "com.wiantribe.universalremote"
+    scripts:
+      - name: Install dependencies
+        script: flutter pub get
+
+      - name: Static analysis
+        script: flutter analyze
+
+      - name: Unit tests
+        script: flutter test
+
+      - name: Set up signing
+        script: |
+          # Pulls the ad-hoc profile Codemagic generated and points Xcode at it.
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_ADHOC \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Build .ipa
+        script: |
+          flutter build ipa --release \
+            --build-number=$PROJECT_BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - flutter_drive.log
+    publishing:
+      email:
+        recipients:
+          # Put your own address here to get the .ipa download link by email.
+          - you@example.com
+        notify:
+          success: true
+          failure: true
+
+  ios-testflight:
+    name: iOS TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: codemagic
+    environment:
+      <<: *env_versions
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.wiantribe.universalremote
+      vars:
+        BUNDLE_ID: "com.wiantribe.universalremote"
+    scripts:
+      - name: Install dependencies
+        script: flutter pub get
+      - name: Static analysis
+        script: flutter analyze
+      - name: Unit tests
+        script: flutter test
+      - name: Set up signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Build .ipa
+        script: |
+          flutter build ipa --release \
+            --build-number=$(($(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID") + 1)) \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+
+  android:
+    name: Android APK
+    max_build_duration: 30
+    instance_type: linux_x2
+    environment:
+      flutter: stable
+    scripts:
+      - name: Install dependencies
+        script: flutter pub get
+      - name: Static analysis
+        script: flutter analyze
+      - name: Unit tests
+        script: flutter test
+      - name: Build APK
+        script: flutter build apk --release
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk

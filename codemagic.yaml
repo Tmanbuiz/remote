@@ -1,18 +1,28 @@
 # Cloud iOS builds — this file is why the project does not need a Mac.
 #
 # Codemagic runs these workflows on its own macOS machines with Xcode already
-# installed. You push to git from Windows; the signed .ipa comes back. The only
-# thing that cannot be moved to the cloud is the Apple Developer membership
-# ($99/yr), which is what allows an app to install on a physical iPhone at all.
+# installed. You push from Windows; an .ipa comes back.
 #
-# Setup, once:
+# Three workflows, in the order you are likely to want them:
+#
+#   ios-unsigned    No Apple membership needed. Sign it yourself on Windows
+#                   with a free Apple ID. Start here.
+#   ios-debug       Needs the $99/yr membership. Signed ad-hoc build that
+#                   installs over the air and lasts a year, not 7 days.
+#   ios-testflight  Needs the membership. For handing it to other people.
+#
+# Note the $99 is billed ANNUALLY, not once. Let it lapse and signed builds
+# stop working — which is the main argument for staying on ios-unsigned until
+# the app is something you actually rely on.
+#
+# Setup for the signed workflows, once:
 #   1. codemagic.io -> add this repository
 #   2. Teams -> Code signing identities -> connect your Apple Developer account
-#   3. Create an App Store Connect API key, add it as `codemagic` integration
-#   4. Set BUNDLE_ID below to the identifier you registered with Apple
+#   3. Create an App Store Connect API key, add it as the `codemagic` integration
 #
-# The `ios-debug` workflow is the one to use while developing: it produces an
-# .ipa you can install over the air, with no App Store review.
+# The bundle identifier below must match ios/Runner.xcodeproj exactly, camel
+# case included — Apple treats com.wiantribe.universalremote and
+# com.wiantribe.universalRemote as different apps.
 
 definitions:
   env_versions: &env_versions
@@ -21,6 +31,54 @@ definitions:
     cocoapods: default
 
 workflows:
+  # START HERE if you have no Apple Developer membership.
+  #
+  # Produces an UNSIGNED .ipa. Codemagic never touches your Apple account, so
+  # this workflow needs no certificates, no API key and no $99 — it just
+  # compiles on a Mac, which is the part Windows cannot do.
+  #
+  # You then sign it yourself on Windows with AltStore or Sideloadly, using a
+  # free Apple ID. What that costs you instead of money:
+  #   * the app stops opening after 7 days and must be refreshed
+  #     (AltStore can refresh automatically over Wi-Fi)
+  #   * at most 3 sideloaded apps on the device at once
+  #   * no push notifications or paid-only entitlements
+  #
+  # None of that affects this app: Local Network access, which is all it needs,
+  # is available to free provisioning.
+  ios-unsigned:
+    name: iOS unsigned .ipa (sideload with a free Apple ID)
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    environment:
+      <<: *env_versions
+    scripts:
+      - name: Install dependencies
+        script: flutter pub get
+
+      - name: Static analysis
+        script: flutter analyze
+
+      - name: Unit tests
+        script: flutter test
+
+      - name: Build unsigned .app
+        script: flutter build ios --release --no-codesign
+
+      - name: Wrap it as an .ipa
+        # An .ipa is just a zip with the .app inside a Payload/ directory.
+        # `flutter build ipa` refuses without signing, so the wrapping is done
+        # by hand here.
+        script: |
+          set -e
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          zip -r -q universal-remote-unsigned.ipa Payload
+          rm -rf Payload
+    artifacts:
+      - build/ios/ipa/*.ipa
+
   ios-debug:
     name: iOS ad-hoc build (install on your own iPhone)
     max_build_duration: 45
@@ -29,9 +87,9 @@ workflows:
       <<: *env_versions
       ios_signing:
         distribution_type: ad_hoc
-        bundle_identifier: com.wiantribe.universalremote
+        bundle_identifier: com.wiantribe.universalRemote
       vars:
-        BUNDLE_ID: "com.wiantribe.universalremote"
+        BUNDLE_ID: "com.wiantribe.universalRemote"
     scripts:
       - name: Install dependencies
         script: flutter pub get
@@ -79,9 +137,9 @@ workflows:
       <<: *env_versions
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.wiantribe.universalremote
+        bundle_identifier: com.wiantribe.universalRemote
       vars:
-        BUNDLE_ID: "com.wiantribe.universalremote"
+        BUNDLE_ID: "com.wiantribe.universalRemote"
     scripts:
       - name: Install dependencies
         script: flutter pub get

@@ -104,19 +104,43 @@ parallel and the results are merged by host.
 
 ## Building without a Mac
 
-You need three things, and only one of them costs money:
+Compiling for iOS genuinely requires macOS — that part cannot be worked around.
+Everything else can. `codemagic.yaml` runs the compile on Codemagic's Macs;
+its free tier covers roughly 500 build-minutes a month, which is ample.
 
-1. **A cloud macOS builder.** `codemagic.yaml` in this repo is ready to go —
-   push the repo to Codemagic and the `ios-debug` workflow produces a signed
-   `.ipa`. Free tier covers roughly 500 build-minutes a month, which is ample.
-   GitHub Actions `macos-latest` runners work too if you prefer.
-2. **An Apple Developer account — $99/yr.** This is unavoidable for installing
-   on a real iPhone for more than 7 days. A free Apple ID can sideload, but the
-   app stops working after a week and must be re-installed.
-3. **Your iPhone's UDID** registered in the developer portal, for ad-hoc builds.
+There are two routes, and the free one is worth exhausting first.
 
-Nothing else about this project requires macOS. Development, analysis and tests
-all run on Windows:
+### Free route — no Apple membership
+
+Run the **`ios-unsigned`** workflow. It compiles on a Mac and hands back an
+unsigned `.ipa`, never touching your Apple account. You then sign and install
+it from Windows with **AltStore** or **Sideloadly** using an ordinary Apple ID.
+
+What it costs instead of money:
+
+- the app stops opening after **7 days** and must be refreshed — AltStore can
+  do this automatically whenever the phone and PC share a Wi-Fi network
+- at most **3** sideloaded apps on the device at once
+- no push notifications or other paid-only entitlements
+
+**None of those restrictions affect this app.** All it needs is Local Network
+access, which free provisioning grants.
+
+### Paid route — $99/yr
+
+Worth it once the app is something you rely on, or you want it on someone
+else's phone. Run **`ios-debug`** for an ad-hoc build that installs over the
+air and lasts a year rather than a week, or **`ios-testflight`** to distribute
+to other people.
+
+Be clear that the **$99 is annual, not a one-off**. If the membership lapses,
+signed builds stop working and App Store listings are removed; already-installed
+ad-hoc builds keep running only until their profile expires. Ad-hoc also needs
+your iPhone's UDID registered, and is capped at 100 devices per year.
+
+### Everything else runs on Windows
+
+Development, analysis and tests need no Mac at all:
 
 ```bash
 flutter analyze

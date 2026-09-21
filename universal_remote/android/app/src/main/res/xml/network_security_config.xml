@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Roku's ECP and Samsung's /api/v2 probe are plain HTTP, and Android has
+  blocked cleartext by default since API 28. TV addresses are DHCP-assigned, so
+  they cannot be enumerated as <domain> entries here — Android's config matches
+  hostnames, not CIDR ranges — which leaves a base-config as the only option.
+
+  The app never makes an internet request of any kind: every URL it builds is
+  aimed at an address discovered on the local subnet. If that ever stops being
+  true, this file should be narrowed at the same time.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
