@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../core/remote_controller.dart';
 import '../core/remote_key.dart';
+import '../protocols/roku_ecp2_session.dart';
 
 /// The remote itself.
 ///
@@ -47,6 +48,7 @@ class RemotePage extends StatelessWidget {
               const SizedBox(height: 20),
               const _TransportRow(),
               const SizedBox(height: 16),
+              const _ShortcutBar(),
               const _NumberPad(),
             ],
           ),
@@ -333,6 +335,104 @@ class _TransportRow extends StatelessWidget {
           size: 54,
         ),
       ],
+    );
+  }
+}
+
+/// Search plus the three channels worth a dedicated button, and a way into the
+/// full list. Hidden entirely on sets whose protocol cannot launch channels.
+class _ShortcutBar extends StatelessWidget {
+  const _ShortcutBar();
+
+  /// Resolved by name against the TV's live list rather than by hardcoded id,
+  /// so a set that numbers its channels differently still works.
+  static const List<String> _quick = ['Netflix', 'YouTube', 'Prime Video'];
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<RemoteController>();
+    if (!controller.supportsChannels) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ActionChip(
+              avatar: const Icon(Icons.search, size: 18),
+              label: const Text('Search'),
+              onPressed: controller.openSearch,
+            ),
+            for (final name in _quick)
+              ActionChip(
+                label: Text(name),
+                onPressed: () => controller.launchChannelNamed(name),
+              ),
+            ActionChip(
+              avatar: const Icon(Icons.grid_view, size: 18),
+              label: const Text('Channels'),
+              onPressed: () => _showChannels(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  void _showChannels(BuildContext context) {
+    final controller = context.read<RemoteController>();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        builder: (_, scrollController) => FutureBuilder<List<RokuChannel>>(
+          // Fetched on open rather than cached: the list changes whenever a
+          // channel is installed, and it is one request on a live session.
+          future: controller.fetchChannels(),
+          builder: (_, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final channels = snapshot.data ?? const <RokuChannel>[];
+            if (channels.isEmpty) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Text('The TV did not return a channel list.'),
+                ),
+              );
+            }
+            return ListView.builder(
+              controller: scrollController,
+              itemCount: channels.length,
+              itemBuilder: (_, i) {
+                final channel = channels[i];
+                return ListTile(
+                  leading: Icon(
+                    channel.isInput ? Icons.input : Icons.play_circle_outline,
+                  ),
+                  title: Text(channel.name),
+                  // Inputs sit in the same list as channels but are a
+                  // different kind of thing, so they are labelled.
+                  subtitle: channel.isInput ? const Text('TV input') : null,
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await controller.launchChannel(channel.id);
+                  },
+                );
+              },
+            );
+          },
+        ),
+      ),
     );
   }
 }

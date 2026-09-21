@@ -7,7 +7,7 @@ ship it — see [Building without a Mac](#building-without-a-mac).
 
 | Brand | Protocol | Pairing | Status |
 |---|---|---|---|
-| **Roku** | ECP, HTTP on 8060 | none needed | Working, unit-tested |
+| **Roku** | **ECP-2**, WebSocket on 8060 | none needed | Working, unit-tested; protocol proven on real hardware |
 | **Samsung** (2016+, Tizen) | WebSocket on 8002 | on-screen accept, token stored | Working, untested against hardware |
 | **LG** (webOS) | SSAP on 3000 + pointer socket | on-screen accept, client-key stored | Working, untested against hardware |
 | Sony Bravia | IRCC-IP, HTTP | PSK or PIN | Not written yet |
@@ -17,6 +17,26 @@ ship it — see [Building without a Mac](#building-without-a-mac).
 
 Discovered sets whose brand has no adapter appear in the list marked
 "Not yet supported" rather than being hidden, so it is obvious what the app saw.
+
+### Why Roku uses ECP-2 and not plain HTTP
+
+Roku's documented HTTP interface — `POST /keypress/Home` on port 8060 — only
+works when the TV's **Control by mobile apps** setting is permissive. In the
+default Limited mode the TV answers **403** to `/keypress/...` and
+`/query/apps`, while still serving `/query/device-info`.
+
+That failure mode is nasty: an HTTP-only remote passes every mocked test and
+then does nothing on real hardware, with discovery still appearing to work.
+
+So commands go over **ECP-2** instead — a WebSocket to
+`ws://host:8060/ecp-session` using the `ecp-2` subprotocol, authenticated by a
+SHA-1 challenge/response. This is the channel Roku's own app uses, and the TV
+honours it in Limited mode. Discovery stays on HTTP, since `device-info`
+remains readable.
+
+The authentication is pinned by a test against a challenge/response pair
+captured from a real handshake, so a mistake in the port fails loudly in CI
+rather than silently on the sofa.
 
 ### The infrared problem
 
@@ -44,7 +64,8 @@ lib/
     protocol_factory.dart  Brand -> adapter. One line per new brand.
     remote_controller.dart Owns the session; handles reconnect-and-retry
   protocols/
-    roku_protocol.dart     Reference implementation — simplest of the three
+    roku_ecp2_session.dart ECP-2 transport: the channel Roku's own app uses
+    roku_protocol.dart     Roku adapter — ECP-2 for commands, HTTP for discovery
     samsung_protocol.dart  Self-signed TLS, one-shot token
     lg_protocol.dart       Two sockets, two wire formats
   discovery/
@@ -99,8 +120,15 @@ flutter run   # on an Android device or emulator
 
 ## Testing status — read this before trusting it
 
-The Roku adapter is unit-tested against a mocked ECP server: key names, the
-`Lit_` text encoding, error handling and device-info parsing are all verified.
+The Roku adapter's ECP-2 layer is ported from a native Android implementation
+that was built and tested against a real TCL/Hisense Roku TV, and its
+authentication is pinned to a captured handshake vector. The channel-list
+parser, 2xx status handling, channel-id validation and HTTP device-info
+parsing are all unit-tested.
+
+What is **not** covered by tests is the live socket itself — opening the
+WebSocket, the two-message handshake ordering and reconnect behaviour need a
+real TV on the network.
 
 **The Samsung and LG adapters have never been run against a real TV.** They are
 written from the published protocol behaviour and follow the same shape as the

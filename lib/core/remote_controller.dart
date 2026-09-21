@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../discovery/ssdp_discovery.dart';
+import '../protocols/roku_ecp2_session.dart';
+import '../protocols/roku_protocol.dart';
 import '../discovery/subnet_scanner.dart';
 import '../storage/device_store.dart';
 import 'protocol_factory.dart';
@@ -41,6 +43,10 @@ class RemoteController extends ChangeNotifier {
   bool get isScanning => _scanning;
 
   Set<RemoteKey> get supportedKeys => _active?.supportedKeys ?? const {};
+
+  /// Whether the connected set can list and launch channels. Only Roku's
+  /// ECP-2 exposes this today, so the shortcut row hides itself elsewhere.
+  bool get supportsChannels => _active is RokuProtocol;
 
   void loadSaved() {
     _saved = _store.loadAll();
@@ -192,6 +198,71 @@ class RemoteController extends ChangeNotifier {
         notifyListeners();
         return false;
       }
+    }
+  }
+
+  /// The TV's installed channels and inputs, or an empty list on a set whose
+  /// protocol has no concept of them.
+  ///
+  /// Not cached: channels change when the user installs one, and the list is a
+  /// single cheap request on an already-open session.
+  Future<List<RokuChannel>> fetchChannels() async {
+    final protocol = _active;
+    if (protocol is! RokuProtocol) return const [];
+    try {
+      return await protocol.fetchChannels();
+    } catch (e) {
+      _error = 'Could not read the channel list';
+      notifyListeners();
+      return const [];
+    }
+  }
+
+  Future<bool> launchChannel(String channelId) async {
+    final protocol = _active;
+    if (protocol is! RokuProtocol) return false;
+    try {
+      await protocol.launchChannel(channelId);
+      return true;
+    } catch (e) {
+      _error = 'Could not open that channel';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Opens a channel by name, for the fixed shortcut buttons.
+  ///
+  /// Resolved against the live list rather than a hardcoded id, because a
+  /// channel's id is not guaranteed to be the same on every set and a wrong
+  /// one fails silently.
+  Future<bool> launchChannelNamed(String name) async {
+    final channels = await fetchChannels();
+    final wanted = name.toLowerCase();
+    for (final channel in channels) {
+      if (channel.name.toLowerCase() == wanted) {
+        return launchChannel(channel.id);
+      }
+    }
+    for (final channel in channels) {
+      if (channel.name.toLowerCase().contains(wanted)) {
+        return launchChannel(channel.id);
+      }
+    }
+    _error = '$name is not installed on this TV';
+    notifyListeners();
+    return false;
+  }
+
+  /// Opens the TV's own search screen, where [sendText] can then type.
+  Future<void> openSearch() async {
+    final protocol = _active;
+    if (protocol is! RokuProtocol) return;
+    try {
+      await protocol.openSearch();
+    } catch (e) {
+      _error = 'Could not open search';
+      notifyListeners();
     }
   }
 
