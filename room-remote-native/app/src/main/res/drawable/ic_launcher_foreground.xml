@@ -1,8 +1,35 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- Remote body, kept inside the 72dp safe zone so round and squircle masks do not clip it. -->
-    <path android:fillColor="#BCACFF" android:pathData="M48,26H60Q68,26 68,34V74Q68,82 60,82H48Q40,82 40,74V34Q40,26 48,26Z" />
-    <!-- Power dot, d-pad and two keys, punched out in the background colour. -->
-    <path android:fillColor="#101018" android:pathData="M51.6,31.2a2.4,2.4 0 1,0 4.8,0a2.4,2.4 0 1,0 -4.8,0Z M51.5,41H56.5V48H63.5V53H56.5V60H51.5V53H44.5V48H51.5Z M45,67H51V73H45Z M57,67H63V73H57Z" />
+
+    <!-- Signal waves rising from the remote: this is what makes it read as a
+         wireless remote rather than a generic rectangle. -->
+    <path android:pathData="M36.8,29.9A21,21 0 0 1 71.2,29.9"
+        android:strokeColor="#8B7BE8" android:strokeWidth="3.4"
+        android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M41.7,33.4A15,15 0 0 1 66.3,33.4"
+        android:strokeColor="#A897F5" android:strokeWidth="3.4"
+        android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M46.6,36.8A9,9 0 0 1 61.4,36.8"
+        android:strokeColor="#CFC4FF" android:strokeWidth="3.4"
+        android:strokeLineCap="round" android:fillColor="#00000000" />
+
+    <!-- Remote body, lit from the top-left so it does not read as a flat slab. -->
+    <path android:pathData="M54,42Q66,42 66,54V74Q66,86 54,86Q42,86 42,74V54Q42,42 54,42Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="42" android:startY="42" android:endX="66" android:endY="86">
+                <item android:offset="0" android:color="#FFFFFF" />
+                <item android:offset="1" android:color="#C3B4FF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Keys punched through to the dark background. -->
+    <path android:fillColor="#1A1433"
+        android:pathData="M51.9,47.9a2.1,2.1 0 1,0 4.2,0a2.1,2.1 0 1,0 -4.2,0Z
+                          M51.8,54.5H56.2V59.3H61V63.7H56.2V68.5H51.8V63.7H47V59.3H51.8Z
+                          M46.6,73.6H51.4V78.4H46.6Z
+                          M56.6,73.6H61.4V78.4H56.6Z" />
 </vector>

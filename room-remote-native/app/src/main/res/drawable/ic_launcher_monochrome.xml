@@ -1,8 +1,17 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- Themed icons use alpha only, so the body is an outline and the keys are solid. -->
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="4" android:fillColor="#00000000"
-        android:pathData="M48,28H60Q66,28 66,34V74Q66,80 60,80H48Q42,80 42,74V34Q42,28 48,28Z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M51.5,41H56.5V48H63.5V53H56.5V60H51.5V53H44.5V48H51.5Z M45,67H51V73H45Z M57,67H63V73H57Z" />
+    <!-- Themed icons use alpha only, so this is an outline with solid keys. -->
+    <path android:pathData="M41.7,33.4A15,15 0 0 1 66.3,33.4"
+        android:strokeColor="#FFFFFF" android:strokeWidth="3.4"
+        android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M46.6,36.8A9,9 0 0 1 61.4,36.8"
+        android:strokeColor="#FFFFFF" android:strokeWidth="3.4"
+        android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M54,43Q65,43 65,54V74Q65,85 54,85Q43,85 43,74V54Q43,43 54,43Z"
+        android:strokeColor="#FFFFFF" android:strokeWidth="3.6" android:fillColor="#00000000" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M51.8,54.5H56.2V59.3H61V63.7H56.2V68.5H51.8V63.7H47V59.3H51.8Z
+                          M46.6,73.6H51.4V78.4H46.6Z
+                          M56.6,73.6H61.4V78.4H56.6Z" />
 </vector>
