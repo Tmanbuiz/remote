@@ -25,6 +25,7 @@ Updated: 2026-10-01
 - Awaited Samsung/LG socket readiness; rejected LG negative response payloads.
 - Tightened discovery handling of malformed/nonlocal endpoints.
 - Switched the iOS CI check to simulator compilation to avoid owner-signing requirements.
+- Switched Gradle to its smaller binary distribution on the official download host, pinned its published SHA-256, and increased the download timeout after an upstream HTTP 504.
 - Added targeted regressions and a physical-device acceptance checklist.
 
 ## Validation
