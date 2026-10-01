@@ -1,9 +1,12 @@
 name: Verify Room Remote
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: room-remote-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -18,15 +21,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: dart fix --apply
-      - run: dart format lib test
-      - uses: actions/upload-artifact@v4
-        with:
-          name: verified-source
-          path: |
-            lib/
-            test/
-            pubspec.lock
+      - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --debug

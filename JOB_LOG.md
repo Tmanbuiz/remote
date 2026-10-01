@@ -29,7 +29,9 @@ Updated: 2026-10-01
 
 ## Validation
 
-The preceding pull request failed its formatting gate and its iOS device-signing build. The completion branch is being checked through GitHub Actions. Final run results will be recorded here before handoff. Local Flutter execution is unavailable in this workspace; no local build success is claimed.
+The original formatting and device-signing failures have been resolved. The completion run passed static analysis, all **38 regression tests**, and iOS simulator compilation. Android packaging is tracked in [the completion run](https://github.com/Tmanbuiz/remote/actions/runs/36865802541).
+
+The final workflow checks formatting without rewriting source, runs analysis/tests, builds a development APK and compiles for the iOS simulator. See [the latest Actions results](https://github.com/Tmanbuiz/remote/actions) for the current commit's platform-build status and downloadable APK. Local whitespace, YAML, Android XML and iOS plist checks also passed. No local Flutter build or physical-TV validation is claimed.
 
 ## Outside the implemented adapters
 

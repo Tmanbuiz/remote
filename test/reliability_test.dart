@@ -226,7 +226,12 @@ void main() {
     expect(report, isNot(contains('"test"')));
   });
   test('queued tap never moves to a different TV', () async {
-    const other = TvDevice(id: 'other', name: 'Other TV', host: '192.168.1.21', brand: TvBrand.roku);
+    const other = TvDevice(
+      id: 'other',
+      name: 'Other TV',
+      host: '192.168.1.21',
+      brand: TvBrand.roku,
+    );
     final otherProtocol = FakeProtocol(other);
     controller.dispose();
     controller = RemoteController(

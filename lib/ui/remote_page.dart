@@ -414,8 +414,7 @@ class _RemoteButtonState extends State<RemoteButton>
     final device = controller.activeDevice?.id;
     for (var count = 0; _held && mounted && count < 30; count++) {
       if (controller.activeDevice?.id != device ||
-          controller.state ==
-              RemoteConnectionState.failed) {
+          controller.state == RemoteConnectionState.failed) {
         break;
       }
       await _press();
@@ -454,21 +453,21 @@ class _RemoteButtonState extends State<RemoteButton>
               onPointerUp: (_) => _held = false,
               onPointerCancel: (_) => _held = false,
               child: InkWell(
-              onTap: enabled ? _press : null,
-              onLongPress: enabled && widget.repeat ? _repeat : null,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(widget.icon, size: 28),
-                  const SizedBox(height: 5),
-                  Text(
-                    widget.label,
-                    style: Theme.of(context).textTheme.labelSmall,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+                onTap: enabled ? _press : null,
+                onLongPress: enabled && widget.repeat ? _repeat : null,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(widget.icon, size: 28),
+                    const SizedBox(height: 5),
+                    Text(
+                      widget.label,
+                      style: Theme.of(context).textTheme.labelSmall,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
-            ),
             ),
           ),
         ),
