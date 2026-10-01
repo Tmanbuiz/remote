@@ -22,9 +22,7 @@ class ProtocolFactory {
       case TvBrand.androidTv:
       case TvBrand.appleTv:
       case TvBrand.unknown:
-        throw UnimplementedError(
-          '${device.brand.label} is not supported yet',
-        );
+        throw UnimplementedError('${device.brand.label} is not supported yet');
     }
   }
 

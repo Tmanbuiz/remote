@@ -1,4 +1,3 @@
-
 /// Which wire protocol a discovered set speaks. One brand can only ever map to
 /// one of these; the value is what selects the adapter.
 enum TvBrand {
@@ -30,6 +29,7 @@ class TvDevice {
     this.model,
     this.macAddress,
     this.pairingToken,
+    this.tlsFingerprint,
   });
 
   /// Stable across rediscovery — usually the UPnP USN or the set's serial.
@@ -47,6 +47,7 @@ class TvDevice {
   final String? macAddress;
 
   final String? pairingToken;
+  final String? tlsFingerprint;
 
   bool get isPaired => pairingToken != null && pairingToken!.isNotEmpty;
 
@@ -57,6 +58,7 @@ class TvDevice {
     String? model,
     String? macAddress,
     String? pairingToken,
+    String? tlsFingerprint,
   }) {
     return TvDevice(
       id: id,
@@ -67,33 +69,36 @@ class TvDevice {
       model: model ?? this.model,
       macAddress: macAddress ?? this.macAddress,
       pairingToken: pairingToken ?? this.pairingToken,
+      tlsFingerprint: tlsFingerprint ?? this.tlsFingerprint,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'host': host,
-        'brand': brand.name,
-        'port': port,
-        'model': model,
-        'macAddress': macAddress,
-        'pairingToken': pairingToken,
-      };
+    'id': id,
+    'name': name,
+    'host': host,
+    'brand': brand.name,
+    'port': port,
+    'model': model,
+    'macAddress': macAddress,
+    'pairingToken': pairingToken,
+    'tlsFingerprint': tlsFingerprint,
+  };
 
   factory TvDevice.fromJson(Map<String, dynamic> json) => TvDevice(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        host: json['host'] as String,
-        brand: TvBrand.values.firstWhere(
-          (b) => b.name == json['brand'],
-          orElse: () => TvBrand.unknown,
-        ),
-        port: json['port'] as int?,
-        model: json['model'] as String?,
-        macAddress: json['macAddress'] as String?,
-        pairingToken: json['pairingToken'] as String?,
-      );
+    id: json['id'] as String,
+    name: json['name'] as String,
+    host: json['host'] as String,
+    brand: TvBrand.values.firstWhere(
+      (b) => b.name == json['brand'],
+      orElse: () => TvBrand.unknown,
+    ),
+    port: json['port'] as int?,
+    model: json['model'] as String?,
+    macAddress: json['macAddress'] as String?,
+    pairingToken: json['pairingToken'] as String?,
+    tlsFingerprint: json['tlsFingerprint'] as String?,
+  );
 
   @override
   bool operator ==(Object other) => other is TvDevice && other.id == id;

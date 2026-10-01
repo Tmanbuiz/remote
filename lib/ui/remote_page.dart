@@ -2,577 +2,710 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 
 import '../core/remote_controller.dart';
 import '../core/remote_key.dart';
-import '../protocols/roku_ecp2_session.dart';
+import '../storage/preferences.dart';
+import 'voice_sheet.dart';
+import 'tools_page.dart';
+import 'activities_page.dart';
 
-/// The remote itself.
-///
-/// Every button routes through [_press], which does the haptic tick and the
-/// disabled-key check in one place. Keys the connected TV does not implement
-/// are rendered greyed out rather than hidden, so the layout does not reshuffle
-/// when you switch between a Roku and a Samsung.
-class RemotePage extends StatelessWidget {
+class RemotePage extends StatefulWidget {
   const RemotePage({super.key});
+  @override
+  State<RemotePage> createState() => _RemotePageState();
+}
+
+class _RemotePageState extends State<RemotePage> {
+  bool _touchpad = false;
+  int _tab = 0;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<RemoteController>().refreshApps();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.watch<RemoteController>();
-    final device = controller.activeDevice;
-
+    final c = context.watch<RemoteController>();
+    final prefs = context.watch<Preferences>();
+    final device = c.activeDevice;
     return Scaffold(
       appBar: AppBar(
-        title: Text(device?.name ?? 'Remote'),
-        actions: [
-          _ConnectionDot(state: controller.state),
-          const SizedBox(width: 12),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          child: Column(
-            children: [
-              if (controller.error != null)
-                _ErrorBanner(
-                  message: controller.error!,
-                  onDismiss: controller.clearError,
-                ),
-              const _TopRow(),
-              const SizedBox(height: 20),
-              const _DPad(),
-              const SizedBox(height: 20),
-              const _RockerRow(),
-              const SizedBox(height: 20),
-              const _TransportRow(),
-              const SizedBox(height: 16),
-              const _ShortcutBar(),
-              const _NumberPad(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Sends a key with a haptic tick, and surfaces failures as a snack bar.
-Future<void> _press(BuildContext context, RemoteKey key) async {
-  final controller = context.read<RemoteController>();
-  // Selection click is the lightest tick available; a remote pressed twenty
-  // times in a row should not buzz like a notification.
-  unawaited(HapticFeedback.selectionClick());
-  await controller.sendKey(key);
-}
-
-class _RemoteButton extends StatelessWidget {
-  const _RemoteButton({
-    required this.icon,
-    required this.tvKey,
-    this.label,
-    this.size = 60,
-    this.tone,
-  });
-
-  final IconData icon;
-  final RemoteKey tvKey;
-  final String? label;
-  final double size;
-  final Color? tone;
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = context.watch<RemoteController>();
-    final enabled = controller.supportedKeys.contains(tvKey);
-    final scheme = Theme.of(context).colorScheme;
-
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      label: label ?? tvKey.name,
-      child: Tooltip(
-        message: label ?? tvKey.name,
-        child: Material(
-          color: enabled
-              ? (tone ?? scheme.surfaceContainerHighest)
-              : scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: enabled ? () => _press(context, tvKey) : null,
-            child: SizedBox(
-              width: size,
-              height: size,
-              child: Icon(
-                icon,
-                size: size * 0.42,
-                color: enabled
-                    ? scheme.onSurface
-                    : scheme.onSurface.withValues(alpha: 0.3),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TopRow extends StatelessWidget {
-  const _TopRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _RemoteButton(
-          icon: Icons.power_settings_new,
-          tvKey: RemoteKey.power,
-          label: 'Power',
-          tone: Theme.of(context).colorScheme.errorContainer,
-        ),
-        const _RemoteButton(
-          icon: Icons.input,
-          tvKey: RemoteKey.input,
-          label: 'Source',
-        ),
-        const _RemoteButton(
-          icon: Icons.home_outlined,
-          tvKey: RemoteKey.home,
-          label: 'Home',
-        ),
-        const _RemoteButton(
-          icon: Icons.volume_off,
-          tvKey: RemoteKey.mute,
-          label: 'Mute',
-        ),
-      ],
-    );
-  }
-}
-
-/// The directional cluster. Laid out as a square so the thumb can find OK
-/// without looking — the whole point of a phone remote used in the dark.
-class _DPad extends StatelessWidget {
-  const _DPad();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Column(
-        children: [
-          const _RemoteButton(
-            icon: Icons.keyboard_arrow_up,
-            tvKey: RemoteKey.up,
-            label: 'Up',
-            size: 68,
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const _RemoteButton(
-                icon: Icons.keyboard_arrow_left,
-                tvKey: RemoteKey.left,
-                label: 'Left',
-                size: 68,
-              ),
-              const SizedBox(width: 12),
-              _RemoteButton(
-                icon: Icons.circle,
-                tvKey: RemoteKey.select,
-                label: 'OK',
-                size: 76,
-                tone: scheme.primaryContainer,
-              ),
-              const SizedBox(width: 12),
-              const _RemoteButton(
-                icon: Icons.keyboard_arrow_right,
-                tvKey: RemoteKey.right,
-                label: 'Right',
-                size: 68,
-              ),
-            ],
-          ),
-          const _RemoteButton(
-            icon: Icons.keyboard_arrow_down,
-            tvKey: RemoteKey.down,
-            label: 'Down',
-            size: 68,
-          ),
-          const SizedBox(height: 8),
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _RemoteButton(
-                icon: Icons.arrow_back,
-                tvKey: RemoteKey.back,
-                label: 'Back',
-                size: 52,
-              ),
-              _RemoteButton(
-                icon: Icons.info_outline,
-                tvKey: RemoteKey.info,
-                label: 'Info',
-                size: 52,
-              ),
-              _RemoteButton(
-                icon: Icons.menu,
-                tvKey: RemoteKey.menu,
-                label: 'Menu',
-                size: 52,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Volume and channel, as paired vertical rockers like a physical remote.
-class _RockerRow extends StatelessWidget {
-  const _RockerRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _Rocker(
-          upKey: RemoteKey.volumeUp,
-          downKey: RemoteKey.volumeDown,
-          label: 'VOL',
-          upIcon: Icons.add,
-          downIcon: Icons.remove,
-        ),
-        _Rocker(
-          upKey: RemoteKey.channelUp,
-          downKey: RemoteKey.channelDown,
-          label: 'CH',
-          upIcon: Icons.keyboard_arrow_up,
-          downIcon: Icons.keyboard_arrow_down,
-        ),
-      ],
-    );
-  }
-}
-
-class _Rocker extends StatelessWidget {
-  const _Rocker({
-    required this.upKey,
-    required this.downKey,
-    required this.label,
-    required this.upIcon,
-    required this.downIcon,
-  });
-
-  final RemoteKey upKey;
-  final RemoteKey downKey;
-  final String label;
-  final IconData upIcon;
-  final IconData downIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _RemoteButton(icon: upIcon, tvKey: upKey, label: '$label up'),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  letterSpacing: 1.5,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-        ),
-        _RemoteButton(icon: downIcon, tvKey: downKey, label: '$label down'),
-      ],
-    );
-  }
-}
-
-class _TransportRow extends StatelessWidget {
-  const _TransportRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _RemoteButton(
-          icon: Icons.fast_rewind,
-          tvKey: RemoteKey.rewind,
-          label: 'Rewind',
-          size: 54,
-        ),
-        _RemoteButton(
-          icon: Icons.play_arrow,
-          tvKey: RemoteKey.play,
-          label: 'Play',
-          size: 54,
-        ),
-        _RemoteButton(
-          icon: Icons.pause,
-          tvKey: RemoteKey.pause,
-          label: 'Pause',
-          size: 54,
-        ),
-        _RemoteButton(
-          icon: Icons.fast_forward,
-          tvKey: RemoteKey.fastForward,
-          label: 'Forward',
-          size: 54,
-        ),
-      ],
-    );
-  }
-}
-
-/// Search plus the three channels worth a dedicated button, and a way into the
-/// full list. Hidden entirely on sets whose protocol cannot launch channels.
-class _ShortcutBar extends StatelessWidget {
-  const _ShortcutBar();
-
-  /// Resolved by name against the TV's live list rather than by hardcoded id,
-  /// so a set that numbers its channels differently still works.
-  static const List<String> _quick = ['Netflix', 'YouTube', 'Prime Video'];
-
-  /// Runs a launch and reports failure as a snack bar.
-  ///
-  /// The error banner lives at the top of a scrolling page, so a failure
-  /// triggered from these controls — which sit at the bottom — used to leave no
-  /// visible trace at all. A snack bar shows wherever the user is looking.
-  static Future<void> _launch(
-    BuildContext context,
-    Future<bool> Function() action,
-    String failureMessage,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await action();
-    if (!ok) {
-      messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = context.watch<RemoteController>();
-    if (!controller.supportsChannels) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ActionChip(
-              avatar: const Icon(Icons.search, size: 18),
-              label: const Text('Search'),
-              onPressed: controller.openSearch,
-            ),
-            for (final name in _quick)
-              ActionChip(
-                label: Text(name),
-                onPressed: () => _launch(
-                  context,
-                  () => controller.launchChannelNamed(name),
-                  '$name did not open',
-                ),
-              ),
-            ActionChip(
-              avatar: const Icon(Icons.grid_view, size: 18),
-              label: const Text('Channels'),
-              onPressed: () => _showChannels(context),
+            Text(device?.name ?? 'Room Remote'),
+            Text(
+              device == null ? 'Choose a TV' : prefs.room(device.id),
+              style: Theme.of(context).textTheme.labelMedium,
             ),
           ],
         ),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-
-  void _showChannels(BuildContext context) {
-    final controller = context.read<RemoteController>();
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        builder: (_, scrollController) => FutureBuilder<List<RokuChannel>>(
-          // Fetched on open rather than cached: the list changes whenever a
-          // channel is installed, and it is one request on a live session.
-          future: controller.fetchChannels(),
-          builder: (_, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final channels = snapshot.data ?? const <RokuChannel>[];
-            if (channels.isEmpty) {
-              return const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Text('The TV did not return a channel list.'),
-                ),
-              );
-            }
-            return ListView.builder(
-              controller: scrollController,
-              itemCount: channels.length,
-              itemBuilder: (_, i) {
-                final channel = channels[i];
-                return ListTile(
-                  leading: Icon(
-                    channel.isInput ? Icons.input : Icons.play_circle_outline,
-                  ),
-                  title: Text(channel.name),
-                  // Inputs sit in the same list as channels but are a
-                  // different kind of thing, so they are labelled.
-                  subtitle: channel.isInput ? const Text('TV input') : null,
-                  onTap: () async {
-                    final messenger = ScaffoldMessenger.of(context);
-                    Navigator.of(sheetContext).pop();
-                    final ok = await controller.launchChannel(channel.id);
-                    if (!ok) {
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content: Text('${channel.name} did not open'),
-                        ),
-                      );
-                    }
-                  },
-                );
-              },
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-/// Collapsed by default — most sessions never need it, and it doubles the
-/// height of the page when open.
-class _NumberPad extends StatefulWidget {
-  const _NumberPad();
-
-  @override
-  State<_NumberPad> createState() => _NumberPadState();
-}
-
-class _NumberPadState extends State<_NumberPad> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = context.watch<RemoteController>();
-    final hasDigits = controller.supportedKeys.contains(RemoteKey.digit1);
-    if (!hasDigits) return const SizedBox.shrink();
-
-    return Column(
-      children: [
-        TextButton.icon(
-          onPressed: () => setState(() => _open = !_open),
-          icon: Icon(_open ? Icons.expand_less : Icons.dialpad),
-          label: Text(_open ? 'Hide keypad' : 'Channel keypad'),
-        ),
-        if (_open)
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 3,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 1.6,
-            children: [
-              for (var n = 1; n <= 9; n++) _DigitButton(n),
-              const SizedBox.shrink(),
-              const _DigitButton(0),
-              const SizedBox.shrink(),
-            ],
+        actions: [
+          IconButton(
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => const ToolsPage())),
+            icon: const Icon(Icons.tune),
+            tooltip: 'Settings and connection doctor',
           ),
-      ],
-    );
-  }
-}
-
-class _DigitButton extends StatelessWidget {
-  const _DigitButton(this.digit);
-  final int digit;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton.tonal(
-      onPressed: () => _press(context, RemoteKey.digit(digit)),
-      child: Text('$digit', style: const TextStyle(fontSize: 20)),
-    );
-  }
-}
-
-class _ConnectionDot extends StatelessWidget {
-  const _ConnectionDot({required this.state});
-  final RemoteConnectionState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final (color, tip) = switch (state) {
-      RemoteConnectionState.connected => (Colors.greenAccent, 'Connected'),
-      RemoteConnectionState.connecting => (Colors.amber, 'Connecting…'),
-      RemoteConnectionState.failed => (Colors.redAccent, 'Disconnected'),
-      RemoteConnectionState.idle => (Colors.grey, 'Idle'),
-    };
-    return Tooltip(
-      message: tip,
-      child: Icon(Icons.circle, size: 12, color: color),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message, required this.onDismiss});
-
-  final String message;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(12),
+        ],
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: scheme.onErrorContainer),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.settings_remote_outlined),
+            label: 'Remote',
+          ),
+          NavigationDestination(icon: Icon(Icons.apps), label: 'Apps & inputs'),
+          NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            label: 'Activities',
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: _tab == 2
+            ? const ActivitiesPage(embedded: true)
+            : _tab == 1
+            ? const AppsPanel()
+            : ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  Card(
+                    child: ListTile(
+                      leading: Icon(
+                        c.state == RemoteConnectionState.connected
+                            ? Icons.wifi
+                            : Icons.wifi_off,
+                      ),
+                      title: Text(switch (c.state) {
+                        RemoteConnectionState.connected =>
+                          'Control session ready',
+                        RemoteConnectionState.connecting => 'Connecting…',
+                        RemoteConnectionState.failed =>
+                          'Connection needs attention',
+                        _ => 'Not connected',
+                      }),
+                      subtitle: Text(
+                        c.lastResult?.message ??
+                            'Choose an action. The TV stays in your control.',
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.medical_services_outlined),
+                        tooltip: 'Connection doctor',
+                        onPressed: () {
+                          c.diagnose();
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ToolsPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  if (c.error != null)
+                    MaterialBanner(
+                      content: Text(c.error!),
+                      actions: [
+                        TextButton(
+                          onPressed: c.clearError,
+                          child: const Text('Dismiss'),
+                        ),
+                      ],
+                    ),
+                  if (c.activityRunning)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text(
+                        'An activity is running. Stop it in Activities before using manual controls.',
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    alignment: WrapAlignment.spaceEvenly,
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: const [
+                      RemoteButton(
+                        RemoteKey.power,
+                        Icons.power_settings_new,
+                        'Power',
+                      ),
+                      RemoteButton(RemoteKey.home, Icons.home_outlined, 'Home'),
+                      RemoteButton(RemoteKey.back, Icons.arrow_back, 'Back'),
+                      RemoteButton(
+                        RemoteKey.mute,
+                        Icons.volume_off_outlined,
+                        'Mute',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  if (!prefs.simple)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Buttons'),
+                          selected: !_touchpad,
+                          onSelected: (_) => setState(() => _touchpad = false),
+                        ),
+                        const SizedBox(width: 10),
+                        ChoiceChip(
+                          label: const Text('Touchpad'),
+                          selected: _touchpad,
+                          onSelected: (_) => setState(() => _touchpad = true),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 14),
+                  if (_touchpad && !prefs.simple)
+                    const Touchpad()
+                  else
+                    const DirectionPad(),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    textDirection: prefs.leftHanded
+                        ? TextDirection.rtl
+                        : TextDirection.ltr,
+                    children: [
+                      const Column(
+                        children: [
+                          RemoteButton(
+                            RemoteKey.volumeUp,
+                            Icons.add,
+                            'Volume up',
+                            repeat: true,
+                          ),
+                          SizedBox(height: 10),
+                          RemoteButton(
+                            RemoteKey.volumeDown,
+                            Icons.remove,
+                            'Volume down',
+                            repeat: true,
+                          ),
+                        ],
+                      ),
+                      Column(
+                        children: [
+                          if (c.supportedKeys.contains(RemoteKey.playPause))
+                            const RemoteButton(
+                              RemoteKey.playPause,
+                              Icons.play_arrow,
+                              'Play / pause',
+                            )
+                          else ...[
+                            const RemoteButton(
+                              RemoteKey.play,
+                              Icons.play_arrow,
+                              'Play',
+                            ),
+                            const SizedBox(height: 10),
+                            const RemoteButton(
+                              RemoteKey.pause,
+                              Icons.pause,
+                              'Pause',
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (!prefs.simple)
+                        const Column(
+                          children: [
+                            RemoteButton(
+                              RemoteKey.channelUp,
+                              Icons.keyboard_arrow_up,
+                              'Channel up',
+                              repeat: true,
+                            ),
+                            SizedBox(height: 10),
+                            RemoteButton(
+                              RemoteKey.channelDown,
+                              Icons.keyboard_arrow_down,
+                              'Channel down',
+                              repeat: true,
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: c.capabilities.text && !c.activityRunning
+                            ? () => _input(true)
+                            : null,
+                        icon: const Icon(Icons.mic_none),
+                        label: const Text('Voice search'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: c.capabilities.text && !c.activityRunning
+                            ? () => _input(false)
+                            : null,
+                        icon: const Icon(Icons.keyboard_outlined),
+                        label: const Text('Keyboard'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed:
+                            c.capabilities.audioState && !c.activityRunning
+                            ? () async {
+                                if (c.quietActive) {
+                                  final restore = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Restore the sound?'),
+                                      content: const Text(
+                                        'Only restore if nobody else is intentionally keeping the TV muted.',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, false),
+                                          child: const Text('Keep quiet'),
+                                        ),
+                                        FilledButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, true),
+                                          child: const Text('Restore'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (restore != true) return;
+                                }
+                                await c.quietMoment();
+                              }
+                            : null,
+                        icon: const Icon(Icons.nights_stay_outlined),
+                        label: Text(
+                          c.quietActive ? 'Restore sound' : 'Quiet moment',
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (!prefs.simple) ...[
+                    const SizedBox(height: 20),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: const [
+                        RemoteButton(
+                          RemoteKey.rewind,
+                          Icons.fast_rewind,
+                          'Rewind',
+                        ),
+                        RemoteButton(
+                          RemoteKey.fastForward,
+                          Icons.fast_forward,
+                          'Forward',
+                        ),
+                        RemoteButton(
+                          RemoteKey.info,
+                          Icons.info_outline,
+                          'Info',
+                        ),
+                        RemoteButton(RemoteKey.menu, Icons.menu, 'Menu'),
+                      ],
+                    ),
+                    if (c.supportedKeys.contains(RemoteKey.digit1))
+                      ExpansionTile(
+                        title: const Text('Number pad'),
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              for (var n = 0; n < 10; n++)
+                                TextButton(
+                                  onPressed: c.activityRunning
+                                      ? null
+                                      : () => c.sendKey(RemoteKey.digit(n)),
+                                  child: Text('$n'),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                  ],
+                  const SizedBox(height: 24),
+                  const Text('FAVOURITES'),
+                  const SizedBox(height: 10),
+                  const FavouriteRow(),
+                ],
+              ),
+      ),
+    );
+  }
+
+  void _input(bool voice) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => VoiceSheet(voice: voice),
+  );
+}
+
+class RemoteButton extends StatefulWidget {
+  const RemoteButton(
+    this.tvKey,
+    this.icon,
+    this.label, {
+    super.key,
+    this.repeat = false,
+  });
+  final RemoteKey tvKey;
+  final IconData icon;
+  final String label;
+  final bool repeat;
+  @override
+  State<RemoteButton> createState() => _RemoteButtonState();
+}
+
+class _RemoteButtonState extends State<RemoteButton> {
+  bool _held = false, _sending = false;
+  static final _tts = FlutterTts();
+  Future<void> _press() async {
+    if (_sending || !mounted) return;
+    final c = context.read<RemoteController>();
+    final p = context.read<Preferences>();
+    if (c.activityRunning) return;
+    _sending = true;
+    try {
+      if (p.haptics) unawaited(HapticFeedback.selectionClick());
+      if (p.spoken && !_held) {
+        await _tts.stop();
+        unawaited(_tts.speak(widget.label));
+      }
+      await c.sendKey(widget.tvKey);
+    } finally {
+      _sending = false;
+    }
+  }
+
+  Future<void> _repeat() async {
+    _held = true;
+    final device = context.read<RemoteController>().activeDevice?.id;
+    for (var count = 0; _held && mounted && count < 30; count++) {
+      if (context.read<RemoteController>().activeDevice?.id != device ||
+          context.read<RemoteController>().state ==
+              RemoteConnectionState.failed)
+        break;
+      await _press();
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+    }
+    _held = false;
+  }
+
+  @override
+  void dispose() {
+    _held = false;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.watch<RemoteController>();
+    final enabled =
+        c.supportedKeys.contains(widget.tvKey) && !c.activityRunning;
+    if (!c.supportedKeys.contains(widget.tvKey)) return const SizedBox.shrink();
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: widget.label,
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: 88,
+          height: 82,
+          child: Material(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(24),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: enabled ? _press : null,
+              onLongPress: enabled && widget.repeat ? _repeat : null,
+              onLongPressEnd: (_) => _held = false,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(widget.icon, size: 28),
+                  const SizedBox(height: 5),
+                  Text(
+                    widget.label,
+                    style: Theme.of(context).textTheme.labelSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 18),
-            onPressed: onDismiss,
+        ),
+      ),
+    );
+  }
+}
+
+class DirectionPad extends StatelessWidget {
+  const DirectionPad({super.key});
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(36),
+      ),
+      child: const Column(
+        children: [
+          RemoteButton(
+            RemoteKey.up,
+            Icons.keyboard_arrow_up,
+            'Up',
+            repeat: true,
           ),
+          SizedBox(height: 8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RemoteButton(
+                RemoteKey.left,
+                Icons.keyboard_arrow_left,
+                'Left',
+                repeat: true,
+              ),
+              SizedBox(width: 8),
+              RemoteButton(RemoteKey.select, Icons.check, 'OK'),
+              SizedBox(width: 8),
+              RemoteButton(
+                RemoteKey.right,
+                Icons.keyboard_arrow_right,
+                'Right',
+                repeat: true,
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          RemoteButton(
+            RemoteKey.down,
+            Icons.keyboard_arrow_down,
+            'Down',
+            repeat: true,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class Touchpad extends StatefulWidget {
+  const Touchpad({super.key});
+  @override
+  State<Touchpad> createState() => _TouchpadState();
+}
+
+class _TouchpadState extends State<Touchpad> {
+  Offset _delta = Offset.zero;
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Touchpad. Swipe to move; tap to select. Use Buttons mode for labelled controls.',
+    child: GestureDetector(
+      onTap: () => context.read<RemoteController>().sendKey(RemoteKey.select),
+      onPanStart: (_) => _delta = Offset.zero,
+      onPanUpdate: (d) => _delta += d.delta,
+      onPanEnd: (_) {
+        if (_delta.distance < 20) return;
+        final key = _delta.dx.abs() > _delta.dy.abs()
+            ? (_delta.dx > 0 ? RemoteKey.right : RemoteKey.left)
+            : (_delta.dy > 0 ? RemoteKey.down : RemoteKey.up);
+        context.read<RemoteController>().sendKey(key);
+      },
+      child: Container(
+        height: 260,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(32),
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.touch_app_outlined, size: 42),
+              SizedBox(height: 12),
+              Text('Swipe to move · Tap to select'),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class FavouriteRow extends StatelessWidget {
+  const FavouriteRow({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final c = context.watch<RemoteController>();
+    final p = context.watch<Preferences>();
+    final id = c.activeDevice?.id ?? '';
+    final favourites = c.apps.where((a) => p.favourites(id).contains(a.id));
+    if (favourites.isEmpty)
+      return const Text('Star apps or inputs in the Apps & inputs tab.');
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: favourites
+          .map(
+            (a) => ActionChip(
+              label: Text(p.alias(id, a.id, a.name)),
+              onPressed: c.activityRunning ? null : () => c.launchApp(a.id),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class AppsPanel extends StatelessWidget {
+  const AppsPanel({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final c = context.watch<RemoteController>();
+    final p = context.watch<Preferences>();
+    final id = c.activeDevice?.id ?? '';
+    if (!c.capabilities.apps)
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'This adapter does not expose an app list yet. Use Home and the direction buttons on your TV.',
+          ),
+        ),
+      );
+    return RefreshIndicator(
+      onRefresh: c.refreshApps,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Your apps & inputs',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              ),
+              IconButton(
+                onPressed: c.refreshApps,
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh apps',
+              ),
+            ],
+          ),
+          const Text(
+            'Tap to open. Star a favourite. Hold a name to give it a friendly label.',
+          ),
+          if (c.error != null)
+            Padding(padding: const EdgeInsets.all(12), child: Text(c.error!)),
+          if (c.apps.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('No app list loaded. Tap refresh to try again.'),
+            ),
+          for (final app in c.apps)
+            Card(
+              child: ListTile(
+                leading: Icon(
+                  app.isInput ? Icons.input : Icons.play_circle_outline,
+                ),
+                title: Text(p.alias(id, app.id, app.name)),
+                subtitle: Text(app.isInput ? 'TV input' : 'App'),
+                trailing: IconButton(
+                  icon: Icon(
+                    p.favourites(id).contains(app.id)
+                        ? Icons.star
+                        : Icons.star_border,
+                  ),
+                  tooltip: 'Toggle favourite',
+                  onPressed: () => p.favourite(id, app.id),
+                ),
+                onTap: c.activityRunning
+                    ? null
+                    : () async {
+                        if (await c.launchApp(app.id))
+                          await p.recordLaunch(id, app.id);
+                      },
+                onLongPress: () async {
+                  final value = await askText(
+                    context,
+                    'Name this app or input',
+                    p.alias(id, app.id, app.name),
+                  );
+                  if (value != null && value.trim().isNotEmpty)
+                    await p.setAlias(id, app.id, value);
+                },
+              ),
+            ),
+          if (p.learn)
+            for (final app in c.apps.where(
+              (a) =>
+                  p.launches(id, a.id) >= 3 && !p.favourites(id).contains(a.id),
+            ))
+              Card(
+                child: ListTile(
+                  title: Text('Make ${app.name} easier to reach?'),
+                  subtitle: const Text(
+                    'You opened it several times. Save it as a favourite.',
+                  ),
+                  trailing: TextButton(
+                    onPressed: () => p.favourite(id, app.id),
+                    child: const Text('Save'),
+                  ),
+                ),
+              ),
         ],
       ),
     );
   }
+}
+
+Future<String?> askText(
+  BuildContext context,
+  String title,
+  String value,
+) async {
+  final input = TextEditingController(text: value);
+  final result = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: TextField(controller: input, autofocus: true, maxLength: 60),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, input.text),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+  // Wait for the route transition before disposing its field controller.
+  await Future<void>.delayed(const Duration(milliseconds: 300));
+  input.dispose();
+  return result;
 }

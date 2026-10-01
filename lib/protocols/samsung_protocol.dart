@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 import 'package:web_socket_channel/io.dart';
 
 import '../core/remote_key.dart';
+import '../core/capabilities.dart';
 import '../core/tv_protocol.dart';
 
 /// Samsung Tizen sets (2016 and later).
@@ -25,6 +28,7 @@ class SamsungProtocol extends TvProtocol {
   StreamSubscription<dynamic>? _sub;
   Completer<PairingResult>? _pairing;
   bool _connected = false;
+  bool _establishTrust = false;
 
   static const int securePort = 8002;
   static const int insecurePort = 8001;
@@ -78,6 +82,10 @@ class SamsungProtocol extends TvProtocol {
   Set<RemoteKey> get supportedKeys => _keyCodes.keys.toSet();
 
   @override
+  RemoteCapabilities get capabilities =>
+      const RemoteCapabilities(text: true, wake: true);
+
+  @override
   bool get requiresPairing => true;
 
   @override
@@ -99,11 +107,19 @@ class SamsungProtocol extends TvProtocol {
     );
   }
 
-  /// Tizen ships a self-signed cert, so trust is pinned to the host we were
-  /// explicitly asked to talk to rather than to a CA.
+  /// Tizen ships a self-signed cert, so first explicit pairing records the certificate
+  /// fingerprint. Reconnect rejects a changed self-signed certificate.
   HttpClient _permissiveClient() {
     final client = HttpClient();
-    client.badCertificateCallback = (cert, host, port) => host == device.host;
+    client.badCertificateCallback = (cert, host, port) {
+      if (host != device.host) return false;
+      final fingerprint = sha256.convert(cert.der).toString();
+      final trusted = device.tlsFingerprint;
+      if (trusted != null) return trusted == fingerprint;
+      if (!_establishTrust) return false;
+      device = device.copyWith(tlsFingerprint: fingerprint);
+      return true;
+    };
     client.connectionTimeout = const Duration(seconds: 8);
     return client;
   }
@@ -143,38 +159,44 @@ class SamsungProtocol extends TvProtocol {
         if (token != null && token.isNotEmpty) {
           device = device.copyWith(pairingToken: token);
         }
-        _pairing?.complete(PairingResult(PairingStatus.success, device: device));
+        _pairing?.complete(
+          PairingResult(PairingStatus.success, device: device),
+        );
         _pairing = null;
 
       case 'ms.channel.unauthorized':
         _connected = false;
-        _pairing?.complete(const PairingResult(
-          PairingStatus.rejected,
-          message: 'The TV refused the pairing request',
-        ));
+        _pairing?.complete(
+          const PairingResult(
+            PairingStatus.rejected,
+            message: 'The TV refused the pairing request',
+          ),
+        );
         _pairing = null;
 
       case 'ms.channel.timeOut':
         _connected = false;
-        _pairing?.complete(const PairingResult(
-          PairingStatus.timeout,
-          message: 'The TV prompt timed out',
-        ));
+        _pairing?.complete(
+          const PairingResult(
+            PairingStatus.timeout,
+            message: 'The TV prompt timed out',
+          ),
+        );
         _pairing = null;
     }
   }
 
   void _onSocketDown(Object error) {
     _connected = false;
-    _pairing?.complete(PairingResult(
-      PairingStatus.failed,
-      message: 'Connection lost: $error',
-    ));
+    _pairing?.complete(
+      PairingResult(PairingStatus.failed, message: 'Connection lost: $error'),
+    );
     _pairing = null;
   }
 
   @override
   Future<PairingResult> pair() async {
+    _establishTrust = !device.isPaired;
     final completer = Completer<PairingResult>();
     _pairing = completer;
     try {
@@ -203,13 +225,18 @@ class SamsungProtocol extends TvProtocol {
     }
     final ready = Completer<void>();
     _pairing = Completer<PairingResult>();
-    unawaited(_pairing!.future.then((r) {
-      if (!ready.isCompleted) {
-        r.isSuccess
-            ? ready.complete()
-            : ready.completeError(RemoteAuthException(r.message ?? 'refused'));
-      }
-    }));
+    unawaited(
+      _pairing!.future.then((r) {
+        if (!ready.isCompleted) {
+          r.isSuccess
+              ? ready.complete()
+              : ready.completeError(
+                  RemoteAuthException(r.message ?? 'refused'),
+                );
+        }
+      }),
+    );
+    _establishTrust = false;
     await _open();
     await ready.future.timeout(
       const Duration(seconds: 12),

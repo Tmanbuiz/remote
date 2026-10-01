@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
 import '../core/tv_device.dart';
+import '../services/lan_address.dart';
 
 /// Finds TVs by probing every address on the local /24 directly.
 ///
@@ -45,9 +47,10 @@ class SubnetScanner {
           final ip = addr.address;
           // Only private ranges are worth sweeping; a public address means
           // cellular, where there is no TV to find.
-          if (ip.startsWith('192.168.') ||
-              ip.startsWith('10.') ||
-              _isCarrierGrade(ip)) {
+          if ((iface.name.startsWith('en') ||
+                  iface.name.startsWith('wlan') ||
+                  iface.name.startsWith('wl')) &&
+              isPrivateV4(ip)) {
             return ip;
           }
         }
@@ -58,14 +61,10 @@ class SubnetScanner {
     return null;
   }
 
-  static bool _isCarrierGrade(String ip) {
-    if (!ip.startsWith('172.')) return false;
-    final second = int.tryParse(ip.split('.')[1]) ?? 0;
-    return second >= 16 && second <= 31;
-  }
-
   /// Sweeps the /24 the phone sits on. Returns every set that answered.
-  Future<List<TvDevice>> scan({void Function(int done, int total)? onProgress}) async {
+  Future<List<TvDevice>> scan({
+    void Function(int done, int total)? onProgress,
+  }) async {
     final local = await localAddress();
     if (local == null) return const [];
 
@@ -82,7 +81,7 @@ class SubnetScanner {
 
     for (var i = 0; i < hosts.length; i += _concurrency) {
       final batch = hosts.skip(i).take(_concurrency);
-      final results = await Future.wait(batch.map(_probeHost));
+      final results = await Future.wait(batch.map(probeHost));
       for (final device in results) {
         if (device != null) found.add(device);
       }
@@ -94,7 +93,8 @@ class SubnetScanner {
   }
 
   /// Checks one address for each brand's control port, cheapest first.
-  Future<TvDevice?> _probeHost(String host) async {
+  Future<TvDevice?> probeHost(String host) async {
+    if (!isPrivateV4(host)) return null;
     // A closed TCP port answers fast, so gate the HTTP probes behind a plain
     // socket check rather than paying an HTTP timeout per brand per host.
     if (await _isPortOpen(host, 8060)) {
@@ -105,16 +105,8 @@ class SubnetScanner {
       final samsung = await _probeSamsung(host);
       if (samsung != null) return samsung;
     }
-    if (await _isPortOpen(host, 3000)) {
-      // webOS gives nothing useful over HTTP; an open 3000 is the signal.
-      return TvDevice(
-        id: 'lg-$host',
-        name: 'LG TV ($host)',
-        host: host,
-        brand: TvBrand.lg,
-        port: 3000,
-      );
-    }
+    // An open port alone cannot establish that a device is an LG TV.
+    // LG is identified through its SSDP description or explicit manual setup.
     return null;
   }
 
@@ -136,11 +128,16 @@ class SubnetScanner {
       if (res.statusCode != 200) return null;
 
       String tag(String name) =>
-          RegExp('<$name>([^<]*)</$name>').firstMatch(res.body)?.group(1)?.trim() ??
+          RegExp('<$name>([^<]*)</$name>')
+              .firstMatch(res.body)
+              ?.group(1)
+              ?.trim() ??
           '';
 
-      final name = [tag('user-device-name'), tag('friendly-device-name')]
-          .firstWhere((s) => s.isNotEmpty, orElse: () => 'Roku ($host)');
+      final name = [
+        tag('user-device-name'),
+        tag('friendly-device-name'),
+      ].firstWhere((s) => s.isNotEmpty, orElse: () => 'Roku ($host)');
 
       return TvDevice(
         id: tag('serial-number').isNotEmpty
@@ -166,19 +163,18 @@ class SubnetScanner {
           .get(Uri.parse('http://$host:8001/api/v2/'))
           .timeout(const Duration(seconds: 2));
       if (res.statusCode != 200) return null;
-      // Only Samsung serves this path; body shape is checked by the caller.
-      final body = res.body;
-      final nameMatch = RegExp(r'"name"\s*:\s*"([^"]*)"').firstMatch(body);
-      final idMatch = RegExp(r'"id"\s*:\s*"([^"]*)"').firstMatch(body);
-      final modelMatch = RegExp(r'"modelName"\s*:\s*"([^"]*)"').firstMatch(body);
-
+      final body = jsonDecode(res.body);
+      final info = body is Map ? body['device'] : null;
+      if (info is! Map || info['id'] == null || info['modelName'] == null)
+        return null;
       return TvDevice(
-        id: idMatch != null ? 'samsung-${idMatch.group(1)}' : 'samsung-$host',
-        name: nameMatch?.group(1) ?? 'Samsung TV ($host)',
+        id: 'samsung-${info['id']}',
+        name: info['name']?.toString() ?? 'Samsung TV ($host)',
         host: host,
         brand: TvBrand.samsung,
         port: 8002,
-        model: modelMatch?.group(1),
+        model: info['modelName']?.toString(),
+        macAddress: info['wifiMac']?.toString(),
       );
     } catch (_) {
       return null;

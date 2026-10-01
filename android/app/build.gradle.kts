@@ -1,8 +1,15 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+val signingProperties = Properties()
+val signingFile = rootProject.file("key.properties")
+if (signingFile.exists()) signingProperties.load(FileInputStream(signingFile))
 
 android {
     namespace = "com.wiantribe.universal_remote"
@@ -29,11 +36,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (signingFile.exists()) {
+            create("release") {
+                keyAlias = signingProperties["keyAlias"] as String
+                keyPassword = signingProperties["keyPassword"] as String
+                storeFile = file(signingProperties["storeFile"] as String)
+                storePassword = signingProperties["storePassword"] as String
+            }
+        }
+    }
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Unsigned until the owner supplies key.properties. Never publish a debug-key release.
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 }
@@ -46,4 +62,13 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+
+tasks.configureEach {
+    if (name.startsWith("assembleRelease") || name.startsWith("bundleRelease")) {
+        doFirst {
+            check(signingFile.exists()) { "Release signing requires android/key.properties. Use assembleDebug for a development build." }
+        }
+    }
 }

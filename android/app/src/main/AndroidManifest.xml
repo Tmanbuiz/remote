@@ -8,7 +8,9 @@
          be taken and discovery returns nothing on many devices. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
+        android:allowBackup="false"
         android:label="Universal Remote"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
@@ -47,9 +49,12 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
     </queries>
 </manifest>
+

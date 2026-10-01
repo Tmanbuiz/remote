@@ -1,6 +1,7 @@
 import 'package:http/http.dart' as http;
 
 import '../core/remote_key.dart';
+import '../core/capabilities.dart';
 import '../core/tv_protocol.dart';
 import 'roku_ecp2_session.dart';
 
@@ -15,8 +16,8 @@ import 'roku_ecp2_session.dart';
 /// it passes every mocked test and dies on real hardware.
 class RokuProtocol extends TvProtocol {
   RokuProtocol(super.device, {http.Client? client, RokuEcp2Session? session})
-      : _client = client ?? http.Client(),
-        _session = session ?? RokuEcp2Session();
+    : _client = client ?? http.Client(),
+      _session = session ?? RokuEcp2Session();
 
   final http.Client _client;
   final RokuEcp2Session _session;
@@ -44,17 +45,41 @@ class RokuProtocol extends TvProtocol {
     RemoteKey.mute: 'VolumeMute',
     RemoteKey.channelUp: 'ChannelUp',
     RemoteKey.channelDown: 'ChannelDown',
-    RemoteKey.play: 'Play',
+
     // ECP exposes one transport toggle rather than separate play and pause.
-    RemoteKey.pause: 'Play',
     RemoteKey.playPause: 'Play',
     RemoteKey.rewind: 'Rev',
     RemoteKey.fastForward: 'Fwd',
-    RemoteKey.input: 'InputHDMI1',
   };
 
   @override
   Set<RemoteKey> get supportedKeys => _keyNames.keys.toSet();
+
+  @override
+  RemoteCapabilities get capabilities => const RemoteCapabilities(
+    text: true,
+    apps: true,
+    search: true,
+    acknowledgesKeys: true,
+    wake: true,
+  );
+  @override
+  Future<List<RemoteApp>> listApps() async => (await fetchChannels())
+      .map(
+        (a) => RemoteApp(
+          a.id,
+          a.name,
+          isInput: a.isInput || a.id.startsWith('tvinput.'),
+        ),
+      )
+      .toList();
+  @override
+  Future<void> openApp(String id) => launchChannel(id);
+  @override
+  Future<void> search(String text) async {
+    await openSearch();
+    await sendText(text);
+  }
 
   @override
   bool get requiresPairing => false;
@@ -75,7 +100,8 @@ class RokuProtocol extends TvProtocol {
       );
     }
     final named = device.copyWith(
-      name: info['user-device-name'] ??
+      name:
+          info['user-device-name'] ??
           info['friendly-device-name'] ??
           device.name,
       model: info['model-name'],
@@ -133,8 +159,9 @@ class RokuProtocol extends TvProtocol {
           .timeout(const Duration(seconds: 4));
       if (res.statusCode != 200) return null;
       final info = <String, String>{};
-      for (final m in RegExp(r'<([a-zA-Z0-9\-]+)>([^<]*)</\1>')
-          .allMatches(res.body)) {
+      for (final m in RegExp(
+        r'<([a-zA-Z0-9\-]+)>([^<]*)</\1>',
+      ).allMatches(res.body)) {
         info[m.group(1)!] = m.group(2)!.trim();
       }
       return info;

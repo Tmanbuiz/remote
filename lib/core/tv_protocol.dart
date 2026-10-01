@@ -1,4 +1,5 @@
 import 'remote_key.dart';
+import 'capabilities.dart';
 import 'tv_device.dart';
 
 /// Why a pairing attempt ended. Callers branch on this to decide whether to
@@ -55,6 +56,16 @@ abstract class TvProtocol {
   TvProtocol(this.device);
 
   TvDevice device;
+  RemoteCapabilities get capabilities => const RemoteCapabilities();
+  Future<List<RemoteApp>> listApps() async => const [];
+  Future<void> openApp(String id) async =>
+      throw UnsupportedError('App launch is unavailable');
+  Future<void> search(String text) async =>
+      throw UnsupportedError('Search is unavailable');
+  Future<AudioState> readAudio() async =>
+      throw UnsupportedError('Audio state is unavailable');
+  Future<void> setMuted(bool value) async =>
+      throw UnsupportedError('Mute state is unavailable');
 
   /// Keys this adapter can actually deliver. The UI greys out the rest rather
   /// than sending something the set will silently drop.
@@ -69,9 +80,10 @@ abstract class TvProtocol {
   Future<PairingResult> pair();
 
   /// Only meaningful after [PairingStatus.pinRequired].
-  Future<PairingResult> submitPin(String pin) async =>
-      const PairingResult(PairingStatus.failed,
-          message: 'This device does not use PIN pairing');
+  Future<PairingResult> submitPin(String pin) async => const PairingResult(
+    PairingStatus.failed,
+    message: 'This device does not use PIN pairing',
+  );
 
   Future<void> connect();
 

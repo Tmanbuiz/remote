@@ -49,3 +49,9 @@ app.*.map.json
 
 # Kotlin incremental-compilation cache, written by the Gradle build.
 android/.kotlin/
+
+
+# Owner-managed Android release credentials
+android/key.properties
+*.jks
+*.keystore

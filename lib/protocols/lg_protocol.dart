@@ -2,9 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 import 'package:web_socket_channel/io.dart';
 
 import '../core/remote_key.dart';
+import '../core/capabilities.dart';
+import '../services/lan_address.dart';
 import '../core/tv_protocol.dart';
 
 /// LG webOS, over the SSAP protocol.
@@ -29,6 +33,7 @@ class LgProtocol extends TvProtocol {
   StreamSubscription<dynamic>? _sub;
   Completer<PairingResult>? _pairing;
   bool _connected = false;
+  bool _establishTrust = false;
   int _nextId = 0;
 
   final Map<String, Completer<Map<String, dynamic>>> _pending = {};
@@ -82,44 +87,76 @@ class LgProtocol extends TvProtocol {
   /// The permission list the TV shows the user on the pairing prompt. Asking
   /// for less than the app uses means silent failures later.
   Map<String, dynamic> get _manifest => {
-        'manifestVersion': 1,
-        'appVersion': '1.0',
-        'signed': {
-          'created': '20260101',
-          'appId': 'com.wiantribe.universalremote',
-          'vendorId': 'com.wiantribe',
-          'localizedAppNames': {'': appName},
-          'permissions': [
-            'TEST_SECURE',
-            'CONTROL_INPUT_TEXT',
-            'CONTROL_MOUSE_AND_KEYBOARD',
-            'READ_INSTALLED_APPS',
-            'CONTROL_POWER',
-            'CONTROL_DISPLAY',
-            'CONTROL_AUDIO',
-            'CONTROL_INPUT_MEDIA_PLAYBACK',
-            'CONTROL_INPUT_TV',
-            'READ_CURRENT_CHANNEL',
-            'LAUNCH',
-          ],
-          'serial': 'universal-remote-0001',
-        },
-        'permissions': [
-          'CONTROL_INPUT_TEXT',
-          'CONTROL_MOUSE_AND_KEYBOARD',
-          'CONTROL_POWER',
-          'CONTROL_AUDIO',
-          'CONTROL_INPUT_MEDIA_PLAYBACK',
-          'CONTROL_INPUT_TV',
-          'READ_INSTALLED_APPS',
-          'READ_CURRENT_CHANNEL',
-          'LAUNCH',
-        ],
-      };
+    'manifestVersion': 1,
+    'appVersion': '1.0',
+    'signed': {
+      'created': '20260101',
+      'appId': 'com.wiantribe.universalremote',
+      'vendorId': 'com.wiantribe',
+      'localizedAppNames': {'': appName},
+      'permissions': [
+        'TEST_SECURE',
+        'CONTROL_INPUT_TEXT',
+        'CONTROL_MOUSE_AND_KEYBOARD',
+        'READ_INSTALLED_APPS',
+        'CONTROL_POWER',
+        'CONTROL_DISPLAY',
+        'CONTROL_AUDIO',
+        'CONTROL_INPUT_MEDIA_PLAYBACK',
+        'CONTROL_INPUT_TV',
+        'READ_CURRENT_CHANNEL',
+        'LAUNCH',
+      ],
+      'serial': 'universal-remote-0001',
+    },
+    'permissions': [
+      'CONTROL_INPUT_TEXT',
+      'CONTROL_MOUSE_AND_KEYBOARD',
+      'CONTROL_POWER',
+      'CONTROL_AUDIO',
+      'CONTROL_INPUT_MEDIA_PLAYBACK',
+      'CONTROL_INPUT_TV',
+      'READ_INSTALLED_APPS',
+      'READ_CURRENT_CHANNEL',
+      'LAUNCH',
+    ],
+  };
 
   @override
-  Set<RemoteKey> get supportedKeys =>
-      {..._pointerButtons.keys, ..._ssapUris.keys, RemoteKey.mute};
+  Set<RemoteKey> get supportedKeys => {
+    ..._pointerButtons.keys,
+    ..._ssapUris.keys,
+    RemoteKey.mute,
+  };
+
+  @override
+  RemoteCapabilities get capabilities => const RemoteCapabilities(
+    text: true,
+    apps: true,
+    audioState: true,
+    wake: true,
+  );
+  @override
+  Future<List<RemoteApp>> listApps() async => (await fetchApps()).entries
+      .map((e) => RemoteApp(e.key, e.value))
+      .toList();
+  @override
+  Future<void> openApp(String id) => launchApp(id);
+  @override
+  Future<AudioState> readAudio() async {
+    final p = await _request('ssap://audio/getStatus');
+    if (p['mute'] is! bool || p['volume'] is! num)
+      throw RemoteTransportException('TV did not return audio state');
+    return AudioState(
+      muted: p['mute'] as bool,
+      volume: (p['volume'] as num).toInt(),
+    );
+  }
+
+  @override
+  Future<void> setMuted(bool value) async {
+    await _request('ssap://audio/setMute', {'mute': value});
+  }
 
   @override
   bool get requiresPairing => true;
@@ -135,7 +172,15 @@ class LgProtocol extends TvProtocol {
 
   HttpClient _permissiveClient() {
     final client = HttpClient();
-    client.badCertificateCallback = (cert, host, port) => host == device.host;
+    client.badCertificateCallback = (cert, host, port) {
+      if (host != device.host) return false;
+      final fingerprint = sha256.convert(cert.der).toString();
+      final trusted = device.tlsFingerprint;
+      if (trusted != null) return trusted == fingerprint;
+      if (!_establishTrust) return false;
+      device = device.copyWith(tlsFingerprint: fingerprint);
+      return true;
+    };
     client.connectionTimeout = const Duration(seconds: 8);
     return client;
   }
@@ -170,11 +215,9 @@ class LgProtocol extends TvProtocol {
     if (key != null && key.isNotEmpty) {
       payload['client-key'] = key;
     }
-    _channel!.sink.add(jsonEncode({
-      'type': 'register',
-      'id': 'register_0',
-      'payload': payload,
-    }));
+    _channel!.sink.add(
+      jsonEncode({'type': 'register', 'id': 'register_0', 'payload': payload}),
+    );
   }
 
   void _onMessage(dynamic raw) {
@@ -204,10 +247,9 @@ class LgProtocol extends TvProtocol {
       final error = msg['error']?.toString() ?? 'unknown error';
       if (id == 'register_0') {
         _connected = false;
-        _pairing?.complete(PairingResult(
-          PairingStatus.rejected,
-          message: error,
-        ));
+        _pairing?.complete(
+          PairingResult(PairingStatus.rejected, message: error),
+        );
         _pairing = null;
       }
       final waiter = id == null ? null : _pending.remove(id);
@@ -218,7 +260,9 @@ class LgProtocol extends TvProtocol {
     if (id != null) {
       final waiter = _pending.remove(id);
       final payload = msg['payload'];
-      waiter?.complete(payload is Map<String, dynamic> ? payload : <String, dynamic>{});
+      waiter?.complete(
+        payload is Map<String, dynamic> ? payload : <String, dynamic>{},
+      );
     }
   }
 
@@ -228,15 +272,15 @@ class LgProtocol extends TvProtocol {
       waiter.completeError(RemoteTransportException('$error'));
     }
     _pending.clear();
-    _pairing?.complete(PairingResult(
-      PairingStatus.failed,
-      message: 'Connection lost: $error',
-    ));
+    _pairing?.complete(
+      PairingResult(PairingStatus.failed, message: 'Connection lost: $error'),
+    );
     _pairing = null;
   }
 
   @override
   Future<PairingResult> pair() async {
+    _establishTrust = !device.isPaired;
     final completer = Completer<PairingResult>();
     _pairing = completer;
     try {
@@ -264,7 +308,9 @@ class LgProtocol extends TvProtocol {
     }
     final result = await pair();
     if (!result.isSuccess) {
-      throw RemoteAuthException(result.message ?? 'webOS refused the client key');
+      throw RemoteAuthException(
+        result.message ?? 'webOS refused the client key',
+      );
     }
   }
 
@@ -296,20 +342,27 @@ class LgProtocol extends TvProtocol {
     if (path == null || path.isEmpty) {
       throw RemoteTransportException('TV did not return a pointer socket path');
     }
+    if (!isDeviceEndpoint(Uri.parse(path), device.host))
+      throw RemoteTransportException('TV returned an unsafe pointer endpoint');
     final socket = IOWebSocketChannel.connect(
       Uri.parse(path),
       customClient: _permissiveClient(),
     );
     // Drained so the socket stays open; the pointer channel is write-only for
     // our purposes but errors still need somewhere to go.
-    socket.stream.listen((_) {}, onError: (_) => _pointer = null,
-        onDone: () => _pointer = null);
+    socket.stream.listen(
+      (_) {},
+      onError: (_) => _pointer = null,
+      onDone: () => _pointer = null,
+    );
     _pointer = socket;
     return socket;
   }
 
-  Future<Map<String, dynamic>> _request(String uri,
-      [Map<String, dynamic>? payload]) async {
+  Future<Map<String, dynamic>> _request(
+    String uri, [
+    Map<String, dynamic>? payload,
+  ]) async {
     final channel = _channel;
     if (channel == null || !_connected) {
       throw RemoteTransportException('Not connected to ${device.name}');
@@ -317,12 +370,14 @@ class LgProtocol extends TvProtocol {
     final id = 'req_${_nextId++}';
     final completer = Completer<Map<String, dynamic>>();
     _pending[id] = completer;
-    channel.sink.add(jsonEncode({
-      'type': 'request',
-      'id': id,
-      'uri': uri,
-      'payload': ?payload,
-    }));
+    channel.sink.add(
+      jsonEncode({
+        'type': 'request',
+        'id': id,
+        'uri': uri,
+        'payload': ?payload,
+      }),
+    );
     return completer.future.timeout(
       const Duration(seconds: 8),
       onTimeout: () {
@@ -370,7 +425,9 @@ class LgProtocol extends TvProtocol {
 
   /// Installed apps as `{appId: title}`.
   Future<Map<String, String>> fetchApps() async {
-    final payload = await _request('ssap://com.webos.applicationManager/listApps');
+    final payload = await _request(
+      'ssap://com.webos.applicationManager/listApps',
+    );
     final apps = <String, String>{};
     final list = payload['apps'];
     if (list is List) {

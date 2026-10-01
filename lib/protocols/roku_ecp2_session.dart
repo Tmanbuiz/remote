@@ -57,10 +57,7 @@ class RokuEcp2Session {
 
   /// `base64(sha1(challenge + authKey))` — the response the TV expects.
   static String authResponseFor(String challenge) {
-    final bytes = <int>[
-      ...utf8.encode(challenge),
-      ...utf8.encode(authKey),
-    ];
+    final bytes = <int>[...utf8.encode(challenge), ...utf8.encode(authKey)];
     return base64.encode(sha1.convert(bytes).bytes);
   }
 
@@ -89,7 +86,9 @@ class RokuEcp2Session {
         protocols: const ['ecp-2'],
       ).timeout(_connectTimeout);
     } catch (e) {
-      throw RemoteTransportException('TV did not accept the remote channel: $e');
+      throw RemoteTransportException(
+        'TV did not accept the remote channel: $e',
+      );
     }
 
     // The exchange before the reader loop starts is strictly sequential: the TV
@@ -97,19 +96,23 @@ class RokuEcp2Session {
     // accepted our response.
     final incoming = StreamQueue<dynamic>(socket);
     try {
-      final challengeMsg = _decode(await incoming.next.timeout(_connectTimeout));
+      final challengeMsg = _decode(
+        await incoming.next.timeout(_connectTimeout),
+      );
       final challenge = challengeMsg['param-challenge'];
       if (challenge == null) {
         throw RemoteTransportException('TV did not start authentication.');
       }
 
-      socket.add(jsonEncode({
-        'request': 'authenticate',
-        'request-id': '${_nextId++}',
-        'param-response': authResponseFor(challenge),
-        'param-client-friendly-name': clientName,
-        'param-has-microphone': 'false',
-      }));
+      socket.add(
+        jsonEncode({
+          'request': 'authenticate',
+          'request-id': '${_nextId++}',
+          'param-response': authResponseFor(challenge),
+          'param-client-friendly-name': clientName,
+          'param-has-microphone': 'false',
+        }),
+      );
 
       final reply = _decode(await incoming.next.timeout(_connectTimeout));
       if (!accepted(reply['status'])) {
@@ -174,11 +177,7 @@ class RokuEcp2Session {
     final completer = Completer<Map<String, String>>();
     _pending[id] = completer;
 
-    socket.add(jsonEncode({
-      'request': request,
-      ...params,
-      'request-id': id,
-    }));
+    socket.add(jsonEncode({'request': request, ...params, 'request-id': id}));
 
     try {
       return await completer.future.timeout(timeout);
@@ -190,11 +189,9 @@ class RokuEcp2Session {
   }
 
   Future<void> press(String key) async {
-    final reply = await _call(
-      'key-press',
-      {'param-key': key},
-      onTimeout: 'TV did not respond to the button.',
-    );
+    final reply = await _call('key-press', {
+      'param-key': key,
+    }, onTimeout: 'TV did not respond to the button.');
     if (!accepted(reply['status'])) {
       throw RemoteTransportException('TV refused that button.');
     }
@@ -244,7 +241,9 @@ class RokuEcp2Session {
       onTimeout: 'TV did not respond to the channel.',
     );
     if (!accepted(reply['status'])) {
-      throw RemoteTransportException('That channel is not installed on this TV.');
+      throw RemoteTransportException(
+        'That channel is not installed on this TV.',
+      );
     }
   }
 

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../core/tv_device.dart';
+import '../services/lan_address.dart';
 
 /// A raw SSDP reply, before we decide what kind of set sent it.
 class SsdpResponse {
@@ -49,13 +50,15 @@ class SsdpDiscovery {
     final responses = await _sweep(timeout);
 
     final found = <String, TvDevice>{};
-    await Future.wait(responses.map((r) async {
-      final device = await _identify(r);
-      if (device != null) {
-        // Keyed by id so a set answering several search targets lands once.
-        found.putIfAbsent(device.id, () => device);
-      }
-    }));
+    await Future.wait(
+      responses.map((r) async {
+        final device = await _identify(r);
+        if (device != null) {
+          // Keyed by id so a set answering several search targets lands once.
+          found.putIfAbsent(device.id, () => device);
+        }
+      }),
+    );
 
     return found.values.toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -76,20 +79,28 @@ class SsdpDiscovery {
     final seen = <String, SsdpResponse>{};
     final done = Completer<void>();
 
-    socket.listen((event) {
-      if (event != RawSocketEvent.read) return;
-      final datagram = socket.receive();
-      if (datagram == null) return;
-      final headers = _parseHeaders(utf8.decode(datagram.data, allowMalformed: true));
-      if (headers.isEmpty) return;
-      final key = '${datagram.address.address}|${headers['USN'] ?? headers['ST'] ?? ''}';
-      seen[key] = SsdpResponse(datagram.address, headers);
-    }, onError: (_) {}, onDone: () {
-      if (!done.isCompleted) done.complete();
-    });
+    socket.listen(
+      (event) {
+        if (event != RawSocketEvent.read) return;
+        final datagram = socket.receive();
+        if (datagram == null) return;
+        final headers = _parseHeaders(
+          utf8.decode(datagram.data, allowMalformed: true),
+        );
+        if (headers.isEmpty) return;
+        final key =
+            '${datagram.address.address}|${headers['USN'] ?? headers['ST'] ?? ''}';
+        seen[key] = SsdpResponse(datagram.address, headers);
+      },
+      onError: (_) {},
+      onDone: () {
+        if (!done.isCompleted) done.complete();
+      },
+    );
 
     for (final target in _searchTargets) {
-      final message = 'M-SEARCH * HTTP/1.1\r\n'
+      final message =
+          'M-SEARCH * HTTP/1.1\r\n'
           'HOST: 239.255.255.250:1900\r\n'
           'MAN: "ssdp:discover"\r\n'
           'MX: 3\r\n'
@@ -119,8 +130,9 @@ class SsdpDiscovery {
     for (final line in lines.skip(1)) {
       final idx = line.indexOf(':');
       if (idx <= 0) continue;
-      headers[line.substring(0, idx).trim().toUpperCase()] =
-          line.substring(idx + 1).trim();
+      headers[line.substring(0, idx).trim().toUpperCase()] = line
+          .substring(idx + 1)
+          .trim();
     }
     return headers;
   }
@@ -141,7 +153,7 @@ class SsdpDiscovery {
     final location = r['LOCATION'];
     String descriptionName = '';
     String descriptionMaker = '';
-    if (location != null) {
+    if (location != null && isDeviceEndpoint(Uri.parse(location), host)) {
       final desc = await _fetchDescription(location);
       if (desc != null) {
         descriptionName = desc.$1;
@@ -201,24 +213,32 @@ class SsdpDiscovery {
       final name = tag('user-device-name').isNotEmpty
           ? tag('user-device-name')
           : (tag('friendly-device-name').isNotEmpty
-              ? tag('friendly-device-name')
-              : 'Roku ($host)');
+                ? tag('friendly-device-name')
+                : 'Roku ($host)');
 
       return TvDevice(
-        id: tag('serial-number').isNotEmpty ? 'roku-${tag('serial-number')}' : usn,
+        id: tag('serial-number').isNotEmpty
+            ? 'roku-${tag('serial-number')}'
+            : usn,
         name: name,
         host: host,
         brand: TvBrand.roku,
         port: 8060,
         model: tag('model-name'),
-        macAddress: tag('wifi-mac').isNotEmpty ? tag('wifi-mac') : tag('ethernet-mac'),
+        macAddress: tag('wifi-mac').isNotEmpty
+            ? tag('wifi-mac')
+            : tag('ethernet-mac'),
       );
     } catch (_) {
       return null;
     }
   }
 
-  Future<TvDevice?> _probeSamsung(String host, String usn, String fallbackName) async {
+  Future<TvDevice?> _probeSamsung(
+    String host,
+    String usn,
+    String fallbackName,
+  ) async {
     try {
       final res = await _client
           .get(Uri.parse('http://$host:8001/api/v2/'))
@@ -253,13 +273,19 @@ class SsdpDiscovery {
   /// Returns `(friendlyName, manufacturer)` from a UPnP description document.
   Future<(String, String)?> _fetchDescription(String location) async {
     try {
-      final res = await _client
-          .get(Uri.parse(location))
+      final request = http.Request('GET', Uri.parse(location))
+        ..followRedirects = false;
+      final streamed = await _client
+          .send(request)
+          .timeout(const Duration(seconds: 3));
+      final res = await http.Response.fromStream(streamed)
           .timeout(const Duration(seconds: 3));
       if (res.statusCode != 200) return null;
       String tag(String name) {
-        final m = RegExp('<$name>([^<]*)</$name>', caseSensitive: false)
-            .firstMatch(res.body);
+        final m = RegExp(
+          '<$name>([^<]*)</$name>',
+          caseSensitive: false,
+        ).firstMatch(res.body);
         return m?.group(1)?.trim() ?? '';
       }
 
