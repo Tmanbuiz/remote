@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Remote body, kept inside the 72dp safe zone so round and squircle masks do not clip it. -->
+    <path android:fillColor="#BCACFF" android:pathData="M48,26H60Q68,26 68,34V74Q68,82 60,82H48Q40,82 40,74V34Q40,26 48,26Z" />
+    <!-- Power dot, d-pad and two keys, punched out in the background colour. -->
+    <path android:fillColor="#101018" android:pathData="M51.6,31.2a2.4,2.4 0 1,0 4.8,0a2.4,2.4 0 1,0 -4.8,0Z M51.5,41H56.5V48H63.5V53H56.5V60H51.5V53H44.5V48H51.5Z M45,67H51V73H45Z M57,67H63V73H57Z" />
+</vector>

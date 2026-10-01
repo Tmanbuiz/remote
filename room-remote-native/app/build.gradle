@@ -1,0 +1,50 @@
+plugins { id 'com.android.application' }
+
+// Signing credentials live in keystore.properties, which is not committed.
+// Without it the project still builds; only the release signing step is skipped.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def hasKeystore = keystorePropertiesFile.exists()
+if (hasKeystore) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+android {
+    namespace 'com.home.rokuremote'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.home.rokuremote'
+        minSdk 26
+        targetSdk 35
+        versionCode 15
+        versionName '1.0.0'
+        resourceConfigurations += ['en']
+    }
+    signingConfigs {
+        release {
+            if (hasKeystore) {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig hasKeystore ? signingConfigs.release : null
+            minifyEnabled true
+            shrinkResources true
+            debuggable false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    if (project.hasProperty('debugKeystore')) {
+        signingConfigs.debug.storeFile = file(project.property('debugKeystore'))
+    }
+}
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'net.sf.kxml:kxml2:2.3.0'
+}
