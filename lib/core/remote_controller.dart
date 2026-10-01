@@ -36,6 +36,7 @@ class RemoteController extends ChangeNotifier {
   List<RemoteApp> apps = [];
   bool activityRunning = false;
   int _runGeneration = 0;
+  int _commandGeneration = 0;
   final List<String> activityLog = [];
   String? _quietDevice;
   AudioState? _quietOriginal;
@@ -173,6 +174,7 @@ class RemoteController extends ChangeNotifier {
     if (_active?.device.id == device.id && _active!.isConnected) return;
     await _active?.disconnect();
     apps = [];
+    lastResult = null;
     final p = _factory(device);
     _active = p;
     _state = RemoteConnectionState.connecting;
@@ -223,7 +225,7 @@ class RemoteController extends ChangeNotifier {
     bool acknowledged = false,
   }) async {
     final p = _active;
-    if (p == null)
+    if (p == null || _disposed)
       return const ActionResult(Delivery.failed, 'Select a TV first.');
     try {
       await _ready(p);
@@ -258,8 +260,19 @@ class RemoteController extends ChangeNotifier {
     return lastResult!;
   }
 
-  Future<bool> sendKey(RemoteKey key) => _queue.run(() async {
-    if (activityRunning) return false;
+  // Capture the target before enqueueing: never send a stale tap to another TV.
+  Future<bool> _manualCommand(Future<bool> Function() action) {
+    final target = _active;
+    final generation = _commandGeneration;
+    if (activityRunning || _disposed || target == null) return Future.value(false);
+    return _queue.run(() async {
+      if (_disposed || activityRunning || generation != _commandGeneration ||
+          !identical(target, _active)) return false;
+      return action();
+    });
+  }
+
+  Future<bool> sendKey(RemoteKey key) => _manualCommand(() async {
     if (!supportedKeys.contains(key)) {
       _error = 'This button is unavailable on this TV.';
       _notify();
@@ -286,16 +299,15 @@ class RemoteController extends ChangeNotifier {
     }
     _notify();
   });
-  Future<bool> launchApp(String id) => _queue.run(() async {
-    if (activityRunning) return false;
+  Future<bool> launchApp(String id) => _manualCommand(() async {
     return (await _perform(
       (p) => p.openApp(id),
       acknowledged: capabilities.acknowledgesKeys,
     )).succeeded;
   });
   Future<bool> sendText(String text, {bool search = false}) =>
-      _queue.run(() async {
-        if (activityRunning || text.trim().isEmpty || text.length > 500)
+      _manualCommand(() async {
+        if (text.trim().isEmpty || text.length > 500)
           return false;
         return (await _perform(
           (p) => search ? p.search(text) : p.sendText(text),
@@ -442,6 +454,7 @@ class RemoteController extends ChangeNotifier {
     }
   });
   void cancelActivity() {
+    if (!activityRunning) return;
     _runGeneration++;
     activityRunning = false;
     activityLog.add('Stopped. Commands already sent are not reversed.');
@@ -449,7 +462,8 @@ class RemoteController extends ChangeNotifier {
   }
 
   Future<void> runActivity(Activity activity) async {
-    if (activityRunning) return;
+    if (activityRunning || _disposed) return;
+    _commandGeneration++;
     final generation = ++_runGeneration;
     activityRunning = true;
     activityLog.clear();
@@ -501,6 +515,7 @@ class RemoteController extends ChangeNotifier {
             acknowledged: capabilities.acknowledgesKeys,
           );
         });
+        if (generation != _runGeneration) break;
         activityLog.add('${activityLog.length + 1}. ${result.message}');
         _notify();
         if (!result.succeeded) break;
@@ -513,6 +528,7 @@ class RemoteController extends ChangeNotifier {
 
   void scheduleSleep(Duration duration) {
     cancelSleep();
+    if (activityRunning || duration <= Duration.zero) return;
     final d = activeDevice;
     if (d == null || !supportedKeys.contains(RemoteKey.powerOff)) return;
     sleepDevice = d.id;
@@ -524,7 +540,9 @@ class RemoteController extends ChangeNotifier {
         _record('Sleep skipped: TV unavailable or activity running.');
         return;
       }
+      final generation = _commandGeneration;
       await _queue.run(() async {
+        if (_disposed || activityRunning || generation != _commandGeneration) return;
         try {
           await _select(target);
           await _perform((p) => p.sendKey(RemoteKey.powerOff));
@@ -545,6 +563,7 @@ class RemoteController extends ChangeNotifier {
   }
 
   void onBackground() {
+    _commandGeneration++;
     if (sleepAt != null) {
       cancelSleep();
       _record('Sleep timer cancelled because the app left the foreground.');
@@ -577,6 +596,7 @@ class RemoteController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _commandGeneration++;
     _runGeneration++;
     _sleepTimer?.cancel();
     unawaited(_active?.disconnect());

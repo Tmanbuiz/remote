@@ -93,7 +93,9 @@ class _DeviceListPageState extends State<DeviceListPage> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
         title: Text('Pairing with ${device.name}'),
         content: const Row(
           children: [
@@ -108,6 +110,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

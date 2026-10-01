@@ -27,7 +27,7 @@ class _VoiceSheetState extends State<VoiceSheet> with WidgetsBindingObserver {
   final _text = TextEditingController();
   String? _message, _locale;
   List<LocaleName> _locales = [];
-  bool _busy = false, _listening = false;
+  bool _busy = false, _listening = false, _initializing = false;
   @override
   void initState() {
     super.initState();
@@ -52,10 +52,12 @@ class _VoiceSheetState extends State<VoiceSheet> with WidgetsBindingObserver {
   }
 
   Future<void> _listen() async {
+    if (_initializing || _busy) return;
     if (_listening) {
       await VoiceSession.speech.stop();
       return;
     }
+    setState(() => _initializing = true);
     try {
       if (!await VoiceSession.initialize()) {
         if (mounted)
@@ -96,15 +98,26 @@ class _VoiceSheetState extends State<VoiceSheet> with WidgetsBindingObserver {
           _listening = false;
           _message = 'Voice is unavailable on this phone. You can still type.';
         });
+    } finally {
+      if (mounted) setState(() => _initializing = false);
     }
   }
 
   Future<void> _send(bool search) async {
+    if (_busy || _initializing) return;
+    setState(() => _busy = true);
     final controller = context.read<RemoteController>();
     final id = controller.activeDevice?.id;
-    await VoiceSession.speech.stop();
-    if (!mounted || _text.text.trim().isEmpty) return;
-    setState(() => _busy = true);
+    try {
+      await VoiceSession.speech.stop();
+    } catch (_) {
+      // Keyboard entry remains usable when the speech plugin is unavailable.
+    }
+    if (!mounted) return;
+    if (_text.text.trim().isEmpty) {
+      setState(() => _busy = false);
+      return;
+    }
     final ok =
         id == controller.activeDevice?.id &&
         await controller.sendText(_text.text.trim(), search: search);
@@ -182,7 +195,7 @@ class _VoiceSheetState extends State<VoiceSheet> with WidgetsBindingObserver {
               ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: _busy ? null : _listen,
+              onPressed: _busy || _initializing ? null : _listen,
               icon: Icon(_listening ? Icons.stop_circle : Icons.mic_none),
               label: Text(_listening ? 'Stop listening' : 'Start voice input'),
             ),
@@ -193,12 +206,12 @@ class _VoiceSheetState extends State<VoiceSheet> with WidgetsBindingObserver {
               ),
             if (c.capabilities.search)
               FilledButton.icon(
-                onPressed: _busy || _listening ? null : () => _send(true),
+                onPressed: _busy || _initializing || _listening || c.activityRunning ? null : () => _send(true),
                 icon: const Icon(Icons.search),
                 label: const Text('Open TV search and send'),
               ),
             FilledButton.tonal(
-              onPressed: _busy || _listening || !c.capabilities.text
+              onPressed: _busy || _initializing || _listening || c.activityRunning || !c.capabilities.text
                   ? null
                   : () => _send(false),
               child: const Text('Send to the focused TV text field'),

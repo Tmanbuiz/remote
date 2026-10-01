@@ -375,7 +375,17 @@ class RemoteButton extends StatefulWidget {
   State<RemoteButton> createState() => _RemoteButtonState();
 }
 
-class _RemoteButtonState extends State<RemoteButton> {
+class _RemoteButtonState extends State<RemoteButton> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _held = false;
+  }
   bool _held = false, _sending = false;
   static final _tts = FlutterTts();
   Future<void> _press() async {
@@ -412,6 +422,7 @@ class _RemoteButtonState extends State<RemoteButton> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _held = false;
     super.dispose();
   }
@@ -426,6 +437,7 @@ class _RemoteButtonState extends State<RemoteButton> {
       button: true,
       enabled: enabled,
       label: widget.label,
+      onTap: enabled ? _press : null,
       child: ExcludeSemantics(
         child: SizedBox(
           width: 88,
@@ -462,7 +474,9 @@ class DirectionPad extends StatelessWidget {
   const DirectionPad({super.key});
   @override
   Widget build(BuildContext context) => Center(
-    child: Container(
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -506,6 +520,7 @@ class DirectionPad extends StatelessWidget {
           ),
         ],
       ),
+    ),
     ),
   );
 }

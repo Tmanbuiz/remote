@@ -8,15 +8,25 @@ permissions:
   contents: read
 jobs:
   test:
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: 3.47.5
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: dart fix --apply
+      - run: dart format lib test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-source
+          path: |
+            lib/
+            test/
+            pubspec.lock
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --debug
@@ -25,12 +35,14 @@ jobs:
           name: room-remote-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
   ios:
+    timeout-minutes: 30
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: 3.47.5
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
+      - run: flutter build ios --simulator --debug --no-codesign

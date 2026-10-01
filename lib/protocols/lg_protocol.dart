@@ -202,6 +202,7 @@ class LgProtocol extends TvProtocol {
       onDone: () => _onSocketDown('socket closed'),
       cancelOnError: false,
     );
+    await _channel!.ready.timeout(const Duration(seconds: 8));
     _register();
   }
 
@@ -260,9 +261,13 @@ class LgProtocol extends TvProtocol {
     if (id != null) {
       final waiter = _pending.remove(id);
       final payload = msg['payload'];
-      waiter?.complete(
-        payload is Map<String, dynamic> ? payload : <String, dynamic>{},
-      );
+      if (payload is Map && payload['returnValue'] == false) {
+        waiter?.completeError(RemoteTransportException('TV refused request'));
+      } else {
+        waiter?.complete(
+          payload is Map<String, dynamic> ? payload : <String, dynamic>{},
+        );
+      }
     }
   }
 
@@ -355,6 +360,12 @@ class LgProtocol extends TvProtocol {
       onError: (_) => _pointer = null,
       onDone: () => _pointer = null,
     );
+    try {
+      await socket.ready.timeout(const Duration(seconds: 8));
+    } catch (_) {
+      await socket.sink.close();
+      rethrow;
+    }
     _pointer = socket;
     return socket;
   }
@@ -392,6 +403,9 @@ class LgProtocol extends TvProtocol {
     // Mute is a setter, not a toggle command, so it gets its own branch.
     if (key == RemoteKey.mute) {
       final status = await _request('ssap://audio/getStatus');
+      if (status['mute'] is! bool) {
+        throw RemoteTransportException('TV did not return mute state');
+      }
       final muted = status['mute'] == true;
       await _request('ssap://audio/setMute', {'mute': !muted});
       return;

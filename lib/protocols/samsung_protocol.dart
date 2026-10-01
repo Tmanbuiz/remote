@@ -141,6 +141,7 @@ class SamsungProtocol extends TvProtocol {
       onDone: () => _onSocketDown('socket closed'),
       cancelOnError: false,
     );
+    await _channel!.ready.timeout(const Duration(seconds: 8));
   }
 
   void _onMessage(dynamic raw) {
@@ -223,26 +224,10 @@ class SamsungProtocol extends TvProtocol {
     if (!device.isPaired) {
       throw RemoteAuthException('Pair with this TV before connecting');
     }
-    final ready = Completer<void>();
-    _pairing = Completer<PairingResult>();
-    unawaited(
-      _pairing!.future.then((r) {
-        if (!ready.isCompleted) {
-          r.isSuccess
-              ? ready.complete()
-              : ready.completeError(
-                  RemoteAuthException(r.message ?? 'refused'),
-                );
-        }
-      }),
-    );
-    _establishTrust = false;
-    await _open();
-    await ready.future.timeout(
-      const Duration(seconds: 12),
-      onTimeout: () =>
-          throw RemoteTransportException('Samsung handshake timed out'),
-    );
+    final result = await pair();
+    if (!result.isSuccess) {
+      throw RemoteAuthException(result.message ?? 'Samsung refused the session');
+    }
   }
 
   @override
