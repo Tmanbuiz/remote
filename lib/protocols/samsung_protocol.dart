@@ -226,7 +226,9 @@ class SamsungProtocol extends TvProtocol {
     }
     final result = await pair();
     if (!result.isSuccess) {
-      throw RemoteAuthException(result.message ?? 'Samsung refused the session');
+      throw RemoteAuthException(
+        result.message ?? 'Samsung refused the session',
+      );
     }
   }
 

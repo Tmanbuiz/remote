@@ -33,16 +33,18 @@ class _VoiceSheetState extends State<VoiceSheet> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     VoiceSession.status = (s) {
-      if (mounted)
+      if (mounted) {
         setState(() => _listening = s == SpeechToText.listeningStatus);
+      }
     };
     VoiceSession.error = (_) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _message =
               'Speech recognition stopped. Try again or type your search.';
           _listening = false;
         });
+      }
     };
   }
 
@@ -60,10 +62,12 @@ class _VoiceSheetState extends State<VoiceSheet> with WidgetsBindingObserver {
     setState(() => _initializing = true);
     try {
       if (!await VoiceSession.initialize()) {
-        if (mounted)
+        if (mounted) {
           setState(
-            () => _message = 'Microphone or speech permission is unavailable. Enable it in phone settings, or use the keyboard.',
+            () => _message =
+                'Microphone or speech permission is unavailable. Enable it in phone settings, or use the keyboard.',
           );
+        }
         return;
       }
       final locales = await VoiceSession.speech.locales();
@@ -83,21 +87,23 @@ class _VoiceSheetState extends State<VoiceSheet> with WidgetsBindingObserver {
           listenMode: ListenMode.search,
         ),
         onResult: (r) {
-          if (mounted)
+          if (mounted) {
             setState(() {
               _text.text = r.recognizedWords;
               _text.selection = TextSelection.collapsed(
                 offset: _text.text.length,
               );
             });
+          }
         },
       );
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _listening = false;
           _message = 'Voice is unavailable on this phone. You can still type.';
         });
+      }
     } finally {
       if (mounted) setState(() => _initializing = false);
     }
@@ -206,12 +212,20 @@ class _VoiceSheetState extends State<VoiceSheet> with WidgetsBindingObserver {
               ),
             if (c.capabilities.search)
               FilledButton.icon(
-                onPressed: _busy || _initializing || _listening || c.activityRunning ? null : () => _send(true),
+                onPressed:
+                    _busy || _initializing || _listening || c.activityRunning
+                    ? null
+                    : () => _send(true),
                 icon: const Icon(Icons.search),
                 label: const Text('Open TV search and send'),
               ),
             FilledButton.tonal(
-              onPressed: _busy || _initializing || _listening || c.activityRunning || !c.capabilities.text
+              onPressed:
+                  _busy ||
+                      _initializing ||
+                      _listening ||
+                      c.activityRunning ||
+                      !c.capabilities.text
                   ? null
                   : () => _send(false),
               child: const Text('Send to the focused TV text field'),

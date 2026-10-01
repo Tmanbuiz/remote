@@ -143,8 +143,9 @@ class ToolsPage extends StatelessWidget {
                             ],
                           ),
                         );
-                        if (minutes != null)
+                        if (minutes != null) {
                           c.scheduleSleep(Duration(minutes: minutes));
+                        }
                       }
                     : null,
                 icon: const Icon(Icons.timer_outlined),

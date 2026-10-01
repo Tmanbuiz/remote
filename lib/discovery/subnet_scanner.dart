@@ -128,10 +128,9 @@ class SubnetScanner {
       if (res.statusCode != 200) return null;
 
       String tag(String name) =>
-          RegExp('<$name>([^<]*)</$name>')
-              .firstMatch(res.body)
-              ?.group(1)
-              ?.trim() ??
+          RegExp(
+            '<$name>([^<]*)</$name>',
+          ).firstMatch(res.body)?.group(1)?.trim() ??
           '';
 
       final name = [
@@ -165,8 +164,9 @@ class SubnetScanner {
       if (res.statusCode != 200) return null;
       final body = jsonDecode(res.body);
       final info = body is Map ? body['device'] : null;
-      if (info is! Map || info['id'] == null || info['modelName'] == null)
+      if (info is! Map || info['id'] == null || info['modelName'] == null) {
         return null;
+      }
       return TvDevice(
         id: 'samsung-${info['id']}',
         name: info['name']?.toString() ?? 'Samsung TV ($host)',

@@ -226,11 +226,13 @@ void main() {
     expect(report, isNot(contains('"test"')));
   });
   test('queued tap never moves to a different TV', () async {
-    final other = device.copyWith(id: 'other', name: 'Other TV');
+    const other = TvDevice(id: 'other', name: 'Other TV', host: '192.168.1.21', brand: TvBrand.roku);
     final otherProtocol = FakeProtocol(other);
     controller.dispose();
-    controller = RemoteController(store, factory: (d) =>
-      d.id == device.id ? protocol : otherProtocol);
+    controller = RemoteController(
+      store,
+      factory: (d) => d.id == device.id ? protocol : otherProtocol,
+    );
     await controller.pairAndSave(device);
     final selecting = controller.select(other);
     final staleTap = controller.sendKey(RemoteKey.power);
@@ -248,11 +250,15 @@ void main() {
   });
   test('cancelled activity does not append a completed wait', () async {
     await controller.pairAndSave(device);
-    final run = controller.runActivity(const Activity(
-      id: 'cancel', name: 'Cancel', steps: [
-        ActivityStep(deviceId: 'roku-test', kind: StepKind.wait, value: '1'),
-      ],
-    ));
+    final run = controller.runActivity(
+      const Activity(
+        id: 'cancel',
+        name: 'Cancel',
+        steps: [
+          ActivityStep(deviceId: 'roku-test', kind: StepKind.wait, value: '1'),
+        ],
+      ),
+    );
     await Future<void>.delayed(const Duration(milliseconds: 20));
     controller.cancelActivity();
     await run;

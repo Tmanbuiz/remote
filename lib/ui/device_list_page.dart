@@ -96,28 +96,29 @@ class _DeviceListPageState extends State<DeviceListPage> {
       builder: (_) => PopScope(
         canPop: false,
         child: AlertDialog(
-        title: Text('Pairing with ${device.name}'),
-        content: const Row(
-          children: [
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-            SizedBox(width: 16),
-            Expanded(
-              child: Text('Look at the TV and accept the permission prompt.'),
-            ),
-          ],
+          title: Text('Pairing with ${device.name}'),
+          content: const Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: Text('Look at the TV and accept the permission prompt.'),
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
 
   void _openRemote() {
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const RemotePage()));
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const RemotePage()));
   }
 
   @override

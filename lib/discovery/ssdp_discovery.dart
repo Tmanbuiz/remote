@@ -140,6 +140,7 @@ class SsdpDiscovery {
   /// Turns a candidate into a [TvDevice], or null if it is not a TV we drive.
   Future<TvDevice?> _identify(SsdpResponse r) async {
     final host = r.address.address;
+    if (!isPrivateV4(host)) return null;
     final st = (r['ST'] ?? '').toLowerCase();
     final server = (r['SERVER'] ?? '').toLowerCase();
     final usn = r['USN'] ?? host;
@@ -153,8 +154,9 @@ class SsdpDiscovery {
     final location = r['LOCATION'];
     String descriptionName = '';
     String descriptionMaker = '';
-    if (location != null && isDeviceEndpoint(Uri.parse(location), host)) {
-      final desc = await _fetchDescription(location);
+    final endpoint = location == null ? null : Uri.tryParse(location);
+    if (endpoint != null && isDeviceEndpoint(endpoint, host)) {
+      final desc = await _fetchDescription(endpoint.toString());
       if (desc != null) {
         descriptionName = desc.$1;
         descriptionMaker = desc.$2.toLowerCase();
@@ -278,8 +280,9 @@ class SsdpDiscovery {
       final streamed = await _client
           .send(request)
           .timeout(const Duration(seconds: 3));
-      final res = await http.Response.fromStream(streamed)
-          .timeout(const Duration(seconds: 3));
+      final res = await http.Response.fromStream(
+        streamed,
+      ).timeout(const Duration(seconds: 3));
       if (res.statusCode != 200) return null;
       String tag(String name) {
         final m = RegExp(

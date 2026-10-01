@@ -96,8 +96,9 @@ class _LifecycleHostState extends State<LifecycleHost>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
-        state == AppLifecycleState.hidden)
+        state == AppLifecycleState.hidden) {
       context.read<RemoteController>().onBackground();
+    }
   }
 
   @override

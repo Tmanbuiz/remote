@@ -375,7 +375,8 @@ class RemoteButton extends StatefulWidget {
   State<RemoteButton> createState() => _RemoteButtonState();
 }
 
-class _RemoteButtonState extends State<RemoteButton> with WidgetsBindingObserver {
+class _RemoteButtonState extends State<RemoteButton>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -386,6 +387,7 @@ class _RemoteButtonState extends State<RemoteButton> with WidgetsBindingObserver
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) _held = false;
   }
+
   bool _held = false, _sending = false;
   static final _tts = FlutterTts();
   Future<void> _press() async {
@@ -408,12 +410,14 @@ class _RemoteButtonState extends State<RemoteButton> with WidgetsBindingObserver
 
   Future<void> _repeat() async {
     _held = true;
-    final device = context.read<RemoteController>().activeDevice?.id;
+    final controller = context.read<RemoteController>();
+    final device = controller.activeDevice?.id;
     for (var count = 0; _held && mounted && count < 30; count++) {
-      if (context.read<RemoteController>().activeDevice?.id != device ||
-          context.read<RemoteController>().state ==
-              RemoteConnectionState.failed)
+      if (controller.activeDevice?.id != device ||
+          controller.state ==
+              RemoteConnectionState.failed) {
         break;
+      }
       await _press();
       await Future<void>.delayed(const Duration(milliseconds: 180));
     }
@@ -446,10 +450,12 @@ class _RemoteButtonState extends State<RemoteButton> with WidgetsBindingObserver
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(24),
             clipBehavior: Clip.antiAlias,
-            child: InkWell(
+            child: Listener(
+              onPointerUp: (_) => _held = false,
+              onPointerCancel: (_) => _held = false,
+              child: InkWell(
               onTap: enabled ? _press : null,
               onLongPress: enabled && widget.repeat ? _repeat : null,
-              onLongPressEnd: (_) => _held = false,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -462,6 +468,7 @@ class _RemoteButtonState extends State<RemoteButton> with WidgetsBindingObserver
                   ),
                 ],
               ),
+            ),
             ),
           ),
         ),
@@ -477,50 +484,50 @@ class DirectionPad extends StatelessWidget {
     child: FittedBox(
       fit: BoxFit.scaleDown,
       child: Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(36),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(36),
+        ),
+        child: const Column(
+          children: [
+            RemoteButton(
+              RemoteKey.up,
+              Icons.keyboard_arrow_up,
+              'Up',
+              repeat: true,
+            ),
+            SizedBox(height: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RemoteButton(
+                  RemoteKey.left,
+                  Icons.keyboard_arrow_left,
+                  'Left',
+                  repeat: true,
+                ),
+                SizedBox(width: 8),
+                RemoteButton(RemoteKey.select, Icons.check, 'OK'),
+                SizedBox(width: 8),
+                RemoteButton(
+                  RemoteKey.right,
+                  Icons.keyboard_arrow_right,
+                  'Right',
+                  repeat: true,
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+            RemoteButton(
+              RemoteKey.down,
+              Icons.keyboard_arrow_down,
+              'Down',
+              repeat: true,
+            ),
+          ],
+        ),
       ),
-      child: const Column(
-        children: [
-          RemoteButton(
-            RemoteKey.up,
-            Icons.keyboard_arrow_up,
-            'Up',
-            repeat: true,
-          ),
-          SizedBox(height: 8),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              RemoteButton(
-                RemoteKey.left,
-                Icons.keyboard_arrow_left,
-                'Left',
-                repeat: true,
-              ),
-              SizedBox(width: 8),
-              RemoteButton(RemoteKey.select, Icons.check, 'OK'),
-              SizedBox(width: 8),
-              RemoteButton(
-                RemoteKey.right,
-                Icons.keyboard_arrow_right,
-                'Right',
-                repeat: true,
-              ),
-            ],
-          ),
-          SizedBox(height: 8),
-          RemoteButton(
-            RemoteKey.down,
-            Icons.keyboard_arrow_down,
-            'Down',
-            repeat: true,
-          ),
-        ],
-      ),
-    ),
     ),
   );
 }
@@ -535,7 +542,8 @@ class _TouchpadState extends State<Touchpad> {
   Offset _delta = Offset.zero;
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'Touchpad. Swipe to move; tap to select. Use Buttons mode for labelled controls.',
+    label:
+        'Touchpad. Swipe to move; tap to select. Use Buttons mode for labelled controls.',
     child: GestureDetector(
       onTap: () => context.read<RemoteController>().sendKey(RemoteKey.select),
       onPanStart: (_) => _delta = Offset.zero,
@@ -576,8 +584,9 @@ class FavouriteRow extends StatelessWidget {
     final p = context.watch<Preferences>();
     final id = c.activeDevice?.id ?? '';
     final favourites = c.apps.where((a) => p.favourites(id).contains(a.id));
-    if (favourites.isEmpty)
+    if (favourites.isEmpty) {
       return const Text('Star apps or inputs in the Apps & inputs tab.');
+    }
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -600,7 +609,7 @@ class AppsPanel extends StatelessWidget {
     final c = context.watch<RemoteController>();
     final p = context.watch<Preferences>();
     final id = c.activeDevice?.id ?? '';
-    if (!c.capabilities.apps)
+    if (!c.capabilities.apps) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
@@ -609,6 +618,7 @@ class AppsPanel extends StatelessWidget {
           ),
         ),
       );
+    }
     return RefreshIndicator(
       onRefresh: c.refreshApps,
       child: ListView(
@@ -659,8 +669,9 @@ class AppsPanel extends StatelessWidget {
                 onTap: c.activityRunning
                     ? null
                     : () async {
-                        if (await c.launchApp(app.id))
+                        if (await c.launchApp(app.id)) {
                           await p.recordLaunch(id, app.id);
+                        }
                       },
                 onLongPress: () async {
                   final value = await askText(
@@ -668,8 +679,9 @@ class AppsPanel extends StatelessWidget {
                     'Name this app or input',
                     p.alias(id, app.id, app.name),
                   );
-                  if (value != null && value.trim().isNotEmpty)
+                  if (value != null && value.trim().isNotEmpty) {
                     await p.setAlias(id, app.id, value);
+                  }
                 },
               ),
             ),

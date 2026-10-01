@@ -69,10 +69,12 @@ class RemoteController extends ChangeNotifier {
   }
 
   String _friendly(Object e) {
-    if (e is RemoteAuthException)
+    if (e is RemoteAuthException) {
       return 'TV permission needs attention. Re-pair and accept the prompt on the TV.';
-    if (e is UnsupportedError)
+    }
+    if (e is UnsupportedError) {
       return e.message?.toString() ?? 'This action is unavailable on this TV.';
+    }
     return 'Could not communicate with the TV. Check its power, Wi-Fi and mobile-control permission.';
   }
 
@@ -114,7 +116,10 @@ class RemoteController extends ChangeNotifier {
             .where((d) => !_saved.any((s) => s.id == d.id || s.host == d.host))
             .toList();
       });
-      if (byHost.isEmpty) _error = 'No TV found. Check local-network permission, turn on the TV, or add its IP address manually.';
+      if (byHost.isEmpty) {
+        _error =
+            'No TV found. Check local-network permission, turn on the TV, or add its IP address manually.';
+      }
       _record('Discovery finished: ${byHost.length} device(s).');
     } finally {
       _scanning = false;
@@ -123,17 +128,19 @@ class RemoteController extends ChangeNotifier {
   }
 
   Future<PairingResult> pairAndSave(TvDevice device) => _queue.run(() async {
-    if (activityRunning)
+    if (activityRunning) {
       return const PairingResult(
         PairingStatus.failed,
         message: 'Stop the activity before pairing.',
       );
+    }
     if (!ProtocolFactory.supported.contains(device.brand) ||
-        !isPrivateV4(device.host))
+        !isPrivateV4(device.host)) {
       return const PairingResult(
         PairingStatus.failed,
         message: 'Choose a supported TV with a private IPv4 address.',
       );
+    }
     await _active?.disconnect();
     _active = null;
     apps = [];
@@ -225,8 +232,9 @@ class RemoteController extends ChangeNotifier {
     bool acknowledged = false,
   }) async {
     final p = _active;
-    if (p == null || _disposed)
+    if (p == null || _disposed) {
       return const ActionResult(Delivery.failed, 'Select a TV first.');
+    }
     try {
       await _ready(p);
     } catch (e) {
@@ -264,10 +272,16 @@ class RemoteController extends ChangeNotifier {
   Future<bool> _manualCommand(Future<bool> Function() action) {
     final target = _active;
     final generation = _commandGeneration;
-    if (activityRunning || _disposed || target == null) return Future.value(false);
+    if (activityRunning || _disposed || target == null) {
+      return Future.value(false);
+    }
     return _queue.run(() async {
-      if (_disposed || activityRunning || generation != _commandGeneration ||
-          !identical(target, _active)) return false;
+      if (_disposed ||
+          activityRunning ||
+          generation != _commandGeneration ||
+          !identical(target, _active)) {
+        return false;
+      }
       return action();
     });
   }
@@ -307,8 +321,9 @@ class RemoteController extends ChangeNotifier {
   });
   Future<bool> sendText(String text, {bool search = false}) =>
       _manualCommand(() async {
-        if (text.trim().isEmpty || text.length > 500)
+        if (text.trim().isEmpty || text.length > 500) {
           return false;
+        }
         return (await _perform(
           (p) => search ? p.search(text) : p.sendText(text),
           acknowledged: capabilities.acknowledgesKeys,
@@ -366,7 +381,9 @@ class RemoteController extends ChangeNotifier {
     }
     final reachable = await p.ping();
     _record(
-      reachable ? 'TV endpoint responds. Next check the control session.' : 'Endpoint did not respond. Check TV power, Wi-Fi, guest-network isolation and its address.',
+      reachable
+          ? 'TV endpoint responds. Next check the control session.'
+          : 'Endpoint did not respond. Check TV power, Wi-Fi, guest-network isolation and its address.',
     );
     if (reachable) {
       try {
@@ -387,7 +404,8 @@ class RemoteController extends ChangeNotifier {
       );
       return true;
     } catch (_) {
-      _error = 'Add the TV MAC address in room settings. Wake support depends on TV network standby.';
+      _error =
+          'Add the TV MAC address in room settings. Wake support depends on TV network standby.';
       _notify();
       return false;
     }
@@ -397,7 +415,8 @@ class RemoteController extends ChangeNotifier {
     if (activityRunning) return;
     final p = _active;
     if (p == null || !p.capabilities.audioState) {
-      _error = 'Verified quiet mode needs readable audio state. Use the regular mute button on this TV.';
+      _error =
+          'Verified quiet mode needs readable audio state. Use the regular mute button on this TV.';
       _notify();
       return;
     }
@@ -431,8 +450,9 @@ class RemoteController extends ChangeNotifier {
         if (now.muted && now.volume == original.volume) {
           await p.setMuted(original.muted);
           final restored = await p.readAudio();
-          if (restored.muted != original.muted)
+          if (restored.muted != original.muted) {
             throw StateError('Restore was not verified');
+          }
           lastResult = const ActionResult(
             Delivery.verified,
             'TV reports restored mute state.',
@@ -472,21 +492,24 @@ class RemoteController extends ChangeNotifier {
       for (final step in activity.steps) {
         if (generation != _runGeneration) break;
         final result = await _queue.run(() async {
-          if (generation != _runGeneration)
+          if (generation != _runGeneration) {
             return const ActionResult(Delivery.failed, 'Cancelled');
+          }
           final d = _saved.where((d) => d.id == step.deviceId).firstOrNull;
-          if (d == null)
+          if (d == null) {
             return const ActionResult(
               Delivery.failed,
               'An activity TV was removed.',
             );
+          }
           if (step.kind == StepKind.wait) {
             final seconds = int.tryParse(step.value) ?? 0;
-            if (seconds < 1 || seconds > 30)
+            if (seconds < 1 || seconds > 30) {
               return const ActionResult(
                 Delivery.failed,
                 'Wait must be 1–30 seconds.',
               );
+            }
             for (
               var i = 0;
               i < seconds * 10 && generation == _runGeneration;
@@ -496,18 +519,20 @@ class RemoteController extends ChangeNotifier {
             }
             return const ActionResult(Delivery.verified, 'Wait completed.');
           }
-          if (step.kind == StepKind.wake)
+          if (step.kind == StepKind.wake) {
             return ActionResult(
               await wake(d) ? Delivery.sent : Delivery.failed,
               'Wake packet requested; verify on the TV.',
             );
+          }
           try {
             await _select(d);
           } catch (_) {
             return ActionResult(Delivery.failed, _error ?? 'Connection failed');
           }
-          if (generation != _runGeneration)
+          if (generation != _runGeneration) {
             return const ActionResult(Delivery.failed, 'Cancelled');
+          }
           return _perform(
             (p) => step.kind == StepKind.app
                 ? p.openApp(step.value)
@@ -542,7 +567,9 @@ class RemoteController extends ChangeNotifier {
       }
       final generation = _commandGeneration;
       await _queue.run(() async {
-        if (_disposed || activityRunning || generation != _commandGeneration) return;
+        if (_disposed || activityRunning || generation != _commandGeneration) {
+          return;
+        }
         try {
           await _select(target);
           await _perform((p) => p.sendKey(RemoteKey.powerOff));
@@ -571,23 +598,25 @@ class RemoteController extends ChangeNotifier {
     if (activityRunning) cancelActivity();
   }
 
-  String compatibilityReport({String observation = ''}) =>
-      const JsonEncoder.withIndent('  ').convert({
-        'schema': 1,
-        'brand': activeDevice?.brand.label,
-        'model': activeDevice?.model,
-        'adapter': activeDevice?.brand.name,
-        'hardwareValidation': 'User observation; not independently verified',
-        'capabilities': {
-          'text': capabilities.text,
-          'apps': capabilities.apps,
-          'search': capabilities.search,
-          'audioState': capabilities.audioState,
-        },
-        'lastDelivery': lastResult?.delivery.name,
-        'userObservation': observation,
-        'privacy': 'No address, device ID, token, voice transcript or viewing history included',
-      });
+  String compatibilityReport({
+    String observation = '',
+  }) => const JsonEncoder.withIndent('  ').convert({
+    'schema': 1,
+    'brand': activeDevice?.brand.label,
+    'model': activeDevice?.model,
+    'adapter': activeDevice?.brand.name,
+    'hardwareValidation': 'User observation; not independently verified',
+    'capabilities': {
+      'text': capabilities.text,
+      'apps': capabilities.apps,
+      'search': capabilities.search,
+      'audioState': capabilities.audioState,
+    },
+    'lastDelivery': lastResult?.delivery.name,
+    'userObservation': observation,
+    'privacy':
+        'No address, device ID, token, voice transcript or viewing history included',
+  });
   void clearError() {
     _error = null;
     _notify();

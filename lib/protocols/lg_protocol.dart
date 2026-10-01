@@ -145,8 +145,9 @@ class LgProtocol extends TvProtocol {
   @override
   Future<AudioState> readAudio() async {
     final p = await _request('ssap://audio/getStatus');
-    if (p['mute'] is! bool || p['volume'] is! num)
+    if (p['mute'] is! bool || p['volume'] is! num) {
       throw RemoteTransportException('TV did not return audio state');
+    }
     return AudioState(
       muted: p['mute'] as bool,
       volume: (p['volume'] as num).toInt(),
@@ -347,8 +348,9 @@ class LgProtocol extends TvProtocol {
     if (path == null || path.isEmpty) {
       throw RemoteTransportException('TV did not return a pointer socket path');
     }
-    if (!isDeviceEndpoint(Uri.parse(path), device.host))
+    if (!isDeviceEndpoint(Uri.parse(path), device.host)) {
       throw RemoteTransportException('TV returned an unsafe pointer endpoint');
+    }
     final socket = IOWebSocketChannel.connect(
       Uri.parse(path),
       customClient: _permissiveClient(),

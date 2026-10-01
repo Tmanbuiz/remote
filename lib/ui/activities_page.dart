@@ -151,8 +151,9 @@ class _ActivityEditorState extends State<ActivityEditor> {
       ],
       StepKind.wake => [('wake', 'Send Wake-on-LAN packet')],
     };
-    if (!choices.any((v) => v.$1 == _value))
+    if (!choices.any((v) => v.$1 == _value)) {
       _value = choices.firstOrNull?.$1 ?? '';
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Activity builder')),
       body: ListView(

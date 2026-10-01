@@ -1,181 +1,80 @@
-# Universal Remote
+# Room Remote
 
-A Wi-Fi TV remote for iPhone and Android, built in Flutter. No Mac needed to
-ship it — see [Building without a Mac](#building-without-a-mac).
+A local Wi-Fi TV remote for Android and iPhone, built with Flutter. No account or subscription is required. Your phone and TV must be on the same home network.
 
-## What works today
+**Work status:** [JOB_LOG.md](JOB_LOG.md). **Phone/TV checks:** [DEVICE_TEST_CHECKLIST.md](DEVICE_TEST_CHECKLIST.md).
 
-| Brand | Protocol | Pairing | Status |
+## Features
+
+- Room names, saved TVs, automatic discovery and manual IP entry.
+- Button remote and swipe navigation, with supported buttons shown for each adapter.
+- Voice-to-text search with language selection and editable words before sending. Microphone access starts only when you tap **Start voice input**. Keyboard entry remains available.
+- Live app/input lists, favourites and friendly labels where supported. Optional on-device launch counts suggest favourites; switching the option off deletes those counts.
+- Activities: up to 20 explicit wake, wait, button and app steps across saved TVs. Edit, reorder, run and stop activities; each step reports its delivery result.
+- Quiet moment on LG: read mute/volume, mute, and explicitly restore only when the observed state has not changed.
+- Wake-on-LAN with a saved TV MAC address. Actual wake depends on the TV's network-standby settings.
+- Foreground sleep timer using a power-off command. Leaving the app cancels it; use the TV's own timer for unattended sleep.
+- Simple mode, left-handed volume/channel layout, optional vibration and spoken button names, and practice controls that never contact a TV.
+- Connection diagnostics and a reviewable compatibility report you can copy. No automatic uploads.
+- Protected pairing credentials, private-address validation and first-pairing trust for self-signed TV certificates.
+
+## Adapter support
+
+| Feature | Roku | Samsung Tizen (2016+) | LG webOS |
 |---|---|---|---|
-| **Roku** | **ECP-2**, WebSocket on 8060 | none needed | Working, unit-tested; protocol proven on real hardware |
-| **Samsung** (2016+, Tizen) | WebSocket on 8002 | on-screen accept, token stored | Working, untested against hardware |
-| **LG** (webOS) | SSAP on 3000 + pointer socket | on-screen accept, client-key stored | Working, untested against hardware |
-| Sony Bravia | IRCC-IP, HTTP | PSK or PIN | Not written yet |
-| Vizio | HTTPS on 7345 | PIN shown on TV | Not written yet |
-| Android TV / Google TV | protobuf on 6466/6467 | 6-digit code, TLS client cert | Not written yet |
-| Apple TV | Companion (SRP + ChaCha20) | PIN | Not written yet — see below |
+| Buttons | ECP-2 | WebSocket | SSAP and pointer socket |
+| Pairing | Connect to TV | Accept TV prompt | Accept TV prompt |
+| Keyboard/voice text | Yes | Focused text field | Focused text field |
+| Open search automatically | Search button | Open the field yourself | Open the field yourself |
+| Live apps/inputs | Channels and inputs | Use Home navigation | Installed apps |
+| Verified quiet/restore | Unavailable | Unavailable | Audio-state readback |
+| Wake packet | Requires MAC and TV support | Requires MAC and TV support | Requires MAC and TV support |
 
-Discovered sets whose brand has no adapter appear in the list marked
-"Not yet supported" rather than being hidden, so it is obvious what the app saw.
+An implemented adapter is not a guarantee for every model or firmware. The original Roku transport has a captured real-hardware authentication regression test. Current end-to-end device testing is still required, particularly Samsung and LG. Sony, Vizio, Android/Google TV and Apple TV control adapters are **not implemented**. This app cannot add infrared hardware to a phone.
 
-### Why Roku uses ECP-2 and not plain HTTP
+Discovery combines SSDP with a private IPv4 /24 unicast sweep. The sweep identifies Roku and Samsung endpoints. LG discovery relies on SSDP; use manual setup if multicast is unavailable, including on iOS without the multicast entitlement. Guest networks, VPNs and client isolation can block discovery/control.
 
-Roku's documented HTTP interface — `POST /keypress/Home` on port 8060 — only
-works when the TV's **Control by mobile apps** setting is permissive. In the
-default Limited mode the TV answers **403** to `/keypress/...` and
-`/query/apps`, while still serving `/query/device-info`.
+## Install a development build
 
-That failure mode is nasty: an HTTP-only remote passes every mocked test and
-then does nothing on real hardware, with discovery still appearing to work.
+1. Open **Actions → Verify Room Remote** on GitHub and choose a successful run for the latest commit.
+2. Download **room-remote-debug-apk**, extract the ZIP and install `app-debug.apk` on Android. This is a development build, not a store release.
+3. Put the phone and TV on the same Wi-Fi. Open Room Remote, scan or enter the TV's private IP, and accept any TV pairing prompt.
+4. Follow [the device checklist](DEVICE_TEST_CHECKLIST.md), starting with one harmless button.
 
-So commands go over **ECP-2** instead — a WebSocket to
-`ws://host:8060/ecp-session` using the `ecp-2` subprotocol, authenticated by a
-SHA-1 challenge/response. This is the channel Roku's own app uses, and the TV
-honours it in Limited mode. Discovery stays on HTTP, since `device-info`
-remains readable.
+The iOS CI job compiles for a simulator, without Apple account credentials. Installing on a real iPhone requires signing through Xcode or your configured Codemagic workflow. Store distribution also requires the owner's signing credentials and account setup.
 
-**TV inputs are not launchable over ECP-2.** The TV answers `launch` with 403
-Forbidden for any `tvinput.*` id, while accepting the same id over plain HTTP.
-Inputs have to go through `key-press InputHDMI2` instead, even though
-`query-apps` lists them alongside real channels with nothing to mark the
-difference. Verified on a TCL Roku TV; see `inputKeyFor`.
+## Develop and verify
 
-The authentication is pinned by a test against a challenge/response pair
-captured from a real handshake, so a mistake in the port fails loudly in CI
-rather than silently on the sofa.
+The GitHub workflow pins Flutter **3.47.5**, the SDK used by the existing build runs.
 
-### The infrared problem
-
-**No iPhone has an IR blaster, and no app can add one.** If a TV only accepts
-infrared, it cannot be driven from an iPhone at all — the hardware is not there.
-Every brand above is controlled over Wi-Fi instead, which is why the TV must be
-a networked smart TV. For an IR-only set the only route is a Wi-Fi→IR bridge
-(Broadlink RM4 and similar), which is a separate piece of hardware.
-
-### Apple TV is the expensive one
-
-Apple TV's Companion protocol needs SRP-6a authentication, HKDF key derivation,
-Ed25519 signatures and ChaCha20-Poly1305 encryption, over Apple's OPACK binary
-encoding. There is no shortcut and no Dart library for it. Budget weeks, not
-days — it is a larger job than the other five remaining brands combined.
-
-## Architecture
-
-```
-lib/
-  core/
-    remote_key.dart        Brand-neutral key vocabulary — the UI speaks only this
-    tv_device.dart         Device model; carries the pairing token
-    tv_protocol.dart       The adapter interface every brand implements
-    protocol_factory.dart  Brand -> adapter. One line per new brand.
-    remote_controller.dart Owns the session; handles reconnect-and-retry
-  protocols/
-    roku_ecp2_session.dart ECP-2 transport: the channel Roku's own app uses
-    roku_protocol.dart     Roku adapter — ECP-2 for commands, HTTP for discovery
-    samsung_protocol.dart  Self-signed TLS, one-shot token
-    lg_protocol.dart       Two sockets, two wire formats
-  discovery/
-    ssdp_discovery.dart    Multicast M-SEARCH (works on Android, usually not iOS)
-    subnet_scanner.dart    Unicast /24 sweep (the path that works on iOS)
-  storage/
-    device_store.dart      Persists paired devices and their tokens
-  ui/
-    device_list_page.dart  Discovery and pairing
-    remote_page.dart       The remote itself
-```
-
-Adding a brand means writing one `TvProtocol` subclass and adding one case to
-`ProtocolFactory`. Nothing in the UI changes.
-
-### Why there are two discovery mechanisms
-
-SSDP is the normal way to find a TV: one multicast M-SEARCH, every set answers.
-It works fine on Android.
-
-**It does not work on iOS.** Since iOS 14, sending to a multicast group requires
-the `com.apple.developer.networking.multicast` entitlement, which Apple grants
-only on special application — and routinely declines for consumer apps. Without
-it the datagrams are dropped silently: no error, no results, just an app that
-never finds anything.
-
-So `SubnetScanner` probes all 254 addresses on the local /24 directly over
-unicast TCP, which needs only the ordinary Local Network permission. Both run in
-parallel and the results are merged by host.
-
-## Building without a Mac
-
-Compiling for iOS genuinely requires macOS — that part cannot be worked around.
-Everything else can. `codemagic.yaml` runs the compile on Codemagic's Macs;
-its free tier covers roughly 500 build-minutes a month, which is ample.
-
-There are two routes, and the free one is worth exhausting first.
-
-### Free route — no Apple membership
-
-Run the **`ios-unsigned`** workflow. It compiles on a Mac and hands back an
-unsigned `.ipa`, never touching your Apple account. You then sign and install
-it from Windows with **AltStore** or **Sideloadly** using an ordinary Apple ID.
-
-What it costs instead of money:
-
-- the app stops opening after **7 days** and must be refreshed — AltStore can
-  do this automatically whenever the phone and PC share a Wi-Fi network
-- at most **3** sideloaded apps on the device at once
-- no push notifications or other paid-only entitlements
-
-**None of those restrictions affect this app.** All it needs is Local Network
-access, which free provisioning grants.
-
-### Paid route — $99/yr
-
-Worth it once the app is something you rely on, or you want it on someone
-else's phone. Run **`ios-debug`** for an ad-hoc build that installs over the
-air and lasts a year rather than a week, or **`ios-testflight`** to distribute
-to other people.
-
-Be clear that the **$99 is annual, not a one-off**. If the membership lapses,
-signed builds stop working and App Store listings are removed; already-installed
-ad-hoc builds keep running only until their profile expires. Ad-hoc also needs
-your iPhone's UDID registered, and is capped at 100 devices per year.
-
-### Everything else runs on Windows
-
-Development, analysis and tests need no Mac at all:
-
-```bash
+```sh
+flutter pub get
+dart format --output=none --set-exit-if-changed lib test
 flutter analyze
 flutter test
-flutter run   # on an Android device or emulator
+flutter build apk --debug
+# On a Mac:
+flutter build ios --simulator --debug --no-codesign
 ```
 
-## Testing status — read this before trusting it
+Android release builds require `android/key.properties` and your keystore. Never commit them. Release signing does not fall back to the debug key. Codemagic includes development APK and iOS workflows; signed distribution requires your own account configuration.
 
-The Roku adapter's ECP-2 layer is ported from a native Android implementation
-that was built and tested against a real TCL/Hisense Roku TV, and its
-authentication is pinned to a captured handshake vector. The channel-list
-parser, 2xx status handling, channel-id validation and HTTP device-info
-parsing are all unit-tested.
+## Reliability and privacy
 
-What is **not** covered by tests is the live socket itself — opening the
-WebSocket, the two-message handshake ordering and reconnect behaviour need a
-real TV on the network.
+Commands are serialized. A command captured for one TV is discarded if another TV becomes active before dispatch. Queued taps are invalidated when the app backgrounds or an activity begins. Failed or uncertain commands are not automatically replayed: a power toggle or partially typed text may already have reached the TV.
 
-**The Samsung and LG adapters have never been run against a real TV.** They are
-written from the published protocol behaviour and follow the same shape as the
-mature open-source implementations, but pairing handshakes are exactly the kind
-of thing that differs by firmware year. Expect to iterate on first contact with
-real hardware, particularly:
+Delivery labels distinguish **sent**, **acknowledged**, **verified**, **uncertain** and **failed**. Even a TV acknowledgement does not prove the on-screen result. Only state that the adapter reads back is labelled verified.
 
-- Samsung sets older than 2016 use a completely different (unencrypted, port
-  55000) protocol that this adapter does not speak.
-- LG's pointer-socket path is the most likely thing to need adjustment.
+Pairing tokens migrate from old preferences to platform secure storage before the plaintext copy is removed. Failed migration leaves the old credential available for a retry. Android backup is disabled. Self-signed certificates are trusted on explicit initial pairing, then their recorded fingerprints are checked on subsequent self-signed connections. Re-pairing resets that trust.
 
-## Permissions
+Voice recognition and spoken labels use the phone's services, which may process audio online. Room Remote does not save recordings, transcripts or search text. Optional app-launch counts stay on the phone. Compatibility reports omit network addresses, device IDs and credentials by default; review any text you add before sharing.
 
-- **iOS** — `NSLocalNetworkUsageDescription` and `NSBonjourServices` are set in
-  `ios/Runner/Info.plist`. The system prompt appears on first scan; if the user
-  declines it, discovery returns nothing and there is no way to re-prompt except
-  through Settings.
-- **Android** — `INTERNET`, `ACCESS_WIFI_STATE` and
-  `CHANGE_WIFI_MULTICAST_STATE`, plus a network security config permitting
-  cleartext, since Roku's ECP is plain HTTP.
+## Project layout
+
+- `lib/core/`: controller, capabilities, device model and protocol interface.
+- `lib/protocols/`: Roku ECP-2, Samsung and LG implementations.
+- `lib/discovery/`: SSDP and local subnet discovery.
+- `lib/storage/`: credentials, rooms, favourites and activities.
+- `lib/ui/`: device picker, remote, voice input, activities and tools.
+- `test/`: protocol and controller regression coverage.
+- `.github/workflows/verify.yml`: analysis, tests and platform builds.

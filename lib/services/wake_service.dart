@@ -5,8 +5,9 @@ import 'lan_address.dart';
 class WakeService {
   static List<int> packet(String mac) {
     final normalized = mac.replaceAll(RegExp('[:-]'), '');
-    if (!RegExp(r'^[0-9a-fA-F]{12}$').hasMatch(normalized))
+    if (!RegExp(r'^[0-9a-fA-F]{12}$').hasMatch(normalized)) {
       throw ArgumentError('A valid TV MAC address is required');
+    }
     final bytes = [
       for (var i = 0; i < 12; i += 2)
         int.parse(normalized.substring(i, i + 2), radix: 16),
