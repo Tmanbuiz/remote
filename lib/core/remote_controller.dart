@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -86,9 +87,17 @@ class RemoteController extends ChangeNotifier {
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
       if (byHost.isEmpty) {
+        // On iOS a refused Local Network permission looks exactly like an
+        // empty network: the sweep runs, every connection is blocked, and
+        // nothing answers. Saying so beats letting someone check the TV, the
+        // router and the Wi-Fi first.
         _error = await SubnetScanner.localAddress() == null
             ? 'Not on Wi-Fi. Connect to the same network as the TV.'
-            : 'No TVs found. Check the TV is on and on this Wi-Fi.';
+            : Platform.isIOS
+                ? 'No TVs found. Check Local Network is allowed for this app '
+                    'in Settings, and that the TV is on this Wi-Fi.'
+                : 'No TVs found. Check the TV is on and on this Wi-Fi.';
+
       }
     } catch (e) {
       _error = 'Scan failed: $e';
