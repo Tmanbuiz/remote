@@ -11,6 +11,7 @@ import 'protocol_factory.dart';
 import 'remote_key.dart';
 import 'tv_device.dart';
 import 'tv_protocol.dart';
+import 'wake_on_lan.dart';
 
 enum RemoteConnectionState { idle, connecting, connected, failed }
 
@@ -264,6 +265,42 @@ class RemoteController extends ChangeNotifier {
       _error = 'Could not open search';
       notifyListeners();
     }
+  }
+
+  /// Powers on a TV that may be asleep.
+  ///
+  /// Order matters. A set that kept its network alive in standby — Roku with
+  /// "Fast TV Start", most Samsung and LG sets — answers a normal power key,
+  /// and that is the reliable path. Only when nothing answers is the set truly
+  /// off, and then the magic packet is the only thing its adapter will hear.
+  ///
+  /// Returns true when something was actually sent.
+  Future<bool> wake([TvDevice? device]) async {
+    final target = device ?? activeDevice ?? (_saved.isNotEmpty ? _saved.first : null);
+    if (target == null) {
+      _error = 'No TV saved to turn on';
+      notifyListeners();
+      return false;
+    }
+
+    final protocol = _active;
+    if (protocol != null && protocol.device.host == target.host && protocol.isConnected) {
+      try {
+        await protocol.sendKey(RemoteKey.power);
+        return true;
+      } catch (_) {
+        // Fall through to the magic packet.
+      }
+    }
+
+    final sent = await WakeOnLan.wake(target.macAddress);
+    if (!sent) {
+      _error = target.macAddress == null
+          ? '${target.name} did not record a MAC address, so it cannot be woken while it is off'
+          : 'Could not send the wake packet';
+      notifyListeners();
+    }
+    return sent;
   }
 
   Future<void> sendText(String text) async {

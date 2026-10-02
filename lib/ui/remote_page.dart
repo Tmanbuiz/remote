@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../core/remote_controller.dart';
 import '../core/remote_key.dart';
 import '../protocols/roku_ecp2_session.dart';
+import 'guide_page.dart';
 import 'text_entry_bar.dart';
 
 /// The remote itself.
@@ -28,7 +29,14 @@ class RemotePage extends StatelessWidget {
         title: Text(device?.name ?? 'Remote'),
         actions: [
           _ConnectionDot(state: controller.state),
-          const SizedBox(width: 12),
+          IconButton(
+            tooltip: 'How to use',
+            icon: const Icon(Icons.help_outline),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const GuidePage()),
+            ),
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: SafeArea(

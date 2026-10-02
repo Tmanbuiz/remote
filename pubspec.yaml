@@ -46,6 +46,8 @@ dependencies:
   crypto: ^3.0.5
   # On-device speech recognition for voice search, iOS and Android.
   speech_to_text: ^7.0.0
+  # Opens wiantribe.com in the browser from the guide and the about banner.
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

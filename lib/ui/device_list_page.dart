@@ -5,6 +5,7 @@ import '../core/protocol_factory.dart';
 import '../core/remote_controller.dart';
 import '../core/tv_device.dart';
 import '../core/tv_protocol.dart';
+import 'guide_page.dart';
 import 'remote_page.dart';
 
 class DeviceListPage extends StatefulWidget {
@@ -113,6 +114,21 @@ class _DeviceListPageState extends State<DeviceListPage> {
                   )
                 : const Icon(Icons.refresh),
             tooltip: 'Scan again',
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'guide') {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const GuidePage()),
+                );
+              } else if (value == 'wiantribe') {
+                openWianTribe();
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'guide', child: Text('How to use')),
+              PopupMenuItem(value: 'wiantribe', child: Text('About wiaTribe')),
+            ],
           ),
         ],
       ),
