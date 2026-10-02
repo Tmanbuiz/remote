@@ -234,6 +234,18 @@ class RokuEcp2Session {
     }
   }
 
+  /// A cheap round trip used to keep the session visibly alive.
+  ///
+  /// After set-audio-output our session went silent, and the TV stopped
+  /// streaming after five seconds. The official client keeps talking.
+  Future<void> heartbeat() async {
+    await _call(
+      'query-device-info',
+      const {},
+      onTimeout: 'TV stopped answering.',
+    );
+  }
+
   Future<void> press(String key) async {
     final reply = await _call(
       'key-press',

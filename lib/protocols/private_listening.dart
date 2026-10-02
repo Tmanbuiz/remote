@@ -43,6 +43,7 @@ class PrivateListening {
   RawDatagramSocket? _rtp;
   RawDatagramSocket? _rtcp;
   Timer? _keepAliveTimer;
+  Timer? _sessionTimer;
   StreamSubscription<RawSocketEvent>? _rtpSub;
   SimpleOpusDecoder? _decoder;
   InternetAddress? _tv;
@@ -155,6 +156,16 @@ class PrivateListening {
 
     _sendReceiverReport();
     _keepAliveTimer = Timer.periodic(_keepAlive, (_) => _sendReceiverReport());
+    // Keep the control session talking too. Silence on the WebSocket, not
+    // the RTCP path, is the difference between us and the official client.
+    _sessionTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (!_running) return;
+      try {
+        await _session.heartbeat();
+      } catch (_) {
+        // A missed heartbeat is not fatal on its own.
+      }
+    });
 
     // Silence is the TV's way of reporting every possible failure, so give it
     // a deadline rather than leaving the user staring at a hopeful spinner.
@@ -346,6 +357,8 @@ class PrivateListening {
     _running = false;
     _keepAliveTimer?.cancel();
     _keepAliveTimer = null;
+    _sessionTimer?.cancel();
+    _sessionTimer = null;
     await _rtpSub?.cancel();
     _rtpSub = null;
     _rtp?.close();
