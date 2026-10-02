@@ -41,7 +41,6 @@ class PrivateListening {
   static const Duration _keepAlive = Duration(seconds: 1);
 
   RawDatagramSocket? _rtp;
-  RawDatagramSocket? _rtcp;
   Timer? _keepAliveTimer;
   Timer? _sessionTimer;
   StreamSubscription<RawSocketEvent>? _rtpSub;
@@ -114,23 +113,18 @@ class PrivateListening {
     // then stops after five seconds. Measured: from 6970 it runs for 40
     // seconds and counting, from 6971 or 5150 it dies at 5.0.
 
-    await FlutterPcmSound.setup(sampleRate: sampleRate, channelCount: channels);
+    // iosAllowBackgroundAudio pairs with UIBackgroundModes audio in Info.plist.
+    // Without it iOS stops playback the moment the screen locks, which is
+    // exactly when someone listening on headphones puts the phone down.
+    await FlutterPcmSound.setup(
+      sampleRate: sampleRate,
+      channelCount: channels,
+      iosAllowBackgroundAudio: true,
+    );
     FlutterPcmSound.start();
 
-    debugPrint('private listening: rtp on ${_rtp?.port}, rtcp from ${_rtcp?.port}');
+    debugPrint('private listening: rtp and rtcp on ${_rtp?.port}');
     _rtpSub = _rtp!.listen(_onRtpEvent);
-    // The TV's own RTCP tells us where it expects replies; we were never
-    // reading it, so any request from the set went unanswered.
-    _rtcp?.listen((event) {
-      if (event != RawSocketEvent.read) return;
-      final datagram = _rtcp?.receive();
-      if (datagram == null) return;
-      debugPrint(
-        'rtcp <- ${datagram.address.address}:${datagram.port} '
-        'pt=${datagram.data.length > 1 ? datagram.data[1] : -1} '
-        'len=${datagram.data.length}',
-      );
-    });
     _running = true;
     _heardAudio = false;
     _packets = 0;
@@ -285,9 +279,7 @@ class PrivateListening {
     await _rtpSub?.cancel();
     _rtpSub = null;
     _rtp?.close();
-    _rtcp?.close();
     _rtp = null;
-    _rtcp = null;
     _decoder?.destroy();
     _decoder = null;
     try {
