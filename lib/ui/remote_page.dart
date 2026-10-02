@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../core/remote_controller.dart';
 import '../core/remote_key.dart';
 import '../protocols/roku_ecp2_session.dart';
+import 'text_entry_bar.dart';
 
 /// The remote itself.
 ///
@@ -47,6 +48,8 @@ class RemotePage extends StatelessWidget {
               const _RockerRow(),
               const SizedBox(height: 20),
               const _TransportRow(),
+              const SizedBox(height: 16),
+              const TextEntryBar(),
               const SizedBox(height: 16),
               const _ShortcutBar(),
               const _NumberPad(),

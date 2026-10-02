@@ -44,6 +44,8 @@ dependencies:
   provider: ^6.1.2
   # SHA-1 for the Roku ECP-2 authentication handshake.
   crypto: ^3.0.5
+  # On-device speech recognition for voice search, iOS and Android.
+  speech_to_text: ^7.0.0
 
 dev_dependencies:
   flutter_test:
