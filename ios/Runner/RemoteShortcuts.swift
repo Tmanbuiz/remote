@@ -100,13 +100,12 @@ enum WakeOnLan {
 
             // A lone UDP datagram on busy Wi-Fi is easily dropped, and the
             // packet is idempotent, so repeat rather than hope.
+            let bytes = [UInt8](packet)
             for _ in 0..<3 {
-                let result = packet.withUnsafeBytes { buffer -> Int in
-                    withUnsafePointer(to: &address) { pointer in
-                        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
-                            sendto(handle, buffer.baseAddress, packet.count, 0,
-                                   sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
-                        }
+                let result = withUnsafePointer(to: &address) { pointer -> Int in
+                    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                        sendto(handle, bytes, bytes.count, 0,
+                               sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
                     }
                 }
                 if result > 0 { sent = true }
@@ -175,7 +174,7 @@ struct RemoteAppShortcuts: AppShortcutsProvider {
                 "Show my remote with \(.applicationName)"
             ],
             shortTitle: "Open my remote",
-            systemImageName: "av.remote"
+            systemImageName: "appletvremote.gen4"
         )
     }
 }
