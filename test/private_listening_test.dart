@@ -85,14 +85,42 @@ void main() {
   });
 
   group('RTCP receiver report', () {
-    // The TV stops sending if these stop arriving, so the shape matters.
-    test('is a well-formed empty receiver report', () {
-      final report = PrivateListening.buildReceiverReport(42);
-      expect(report.length, 8);
+    // The TV stops streaming unless these keep arriving and describe its own
+    // stream, so both the shape and the contents matter.
+    test('carries a header and exactly one report block', () {
+      final report = PrivateListening.buildReceiverReport(
+        ourSsrc: 0x11223344,
+        senderSsrc: 0xAABBCCDD,
+        highestSequence: 0x1234,
+      );
+      expect(report.length, 32);
       expect(report[0] >> 6, 2, reason: 'RTP version 2');
-      expect(report[0] & 0x1F, 0, reason: 'no reception report blocks');
+      expect(report[0] & 0x1F, 1, reason: 'exactly one reception report block');
       expect(report[1], 201, reason: 'packet type 201 is a receiver report');
-      expect((report[2] << 8) | report[3], 1, reason: 'length in words minus one');
+      expect((report[2] << 8) | report[3], 7, reason: '8 words minus one');
+    });
+
+    test('names our SSRC and the stream being reported on', () {
+      final report = PrivateListening.buildReceiverReport(
+        ourSsrc: 0x11223344,
+        senderSsrc: 0xAABBCCDD,
+        highestSequence: 0x1234,
+      );
+      expect(report.sublist(4, 8), [0x11, 0x22, 0x33, 0x44]);
+      expect(report.sublist(8, 12), [0xAA, 0xBB, 0xCC, 0xDD]);
+      expect(report.sublist(16, 20), [0x00, 0x00, 0x12, 0x34]);
+    });
+
+    test('encodes loss counts across the three-byte field', () {
+      final report = PrivateListening.buildReceiverReport(
+        ourSsrc: 1,
+        senderSsrc: 2,
+        highestSequence: 3,
+        fractionLost: 0x40,
+        cumulativeLost: 0x010203,
+      );
+      expect(report[12], 0x40);
+      expect(report.sublist(13, 16), [0x01, 0x02, 0x03]);
     });
   });
 

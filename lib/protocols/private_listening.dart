@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
 import 'package:opus_dart/opus_dart.dart';
@@ -32,8 +32,13 @@ class PrivateListening {
   static const int sampleRate = 48000;
   static const int channels = 2;
 
-  /// The TV stops sending if it hears nothing back within a few seconds.
-  static const Duration _keepAlive = Duration(seconds: 5);
+  /// How often to reassure the TV that someone is still listening.
+  ///
+  /// The reference implementation uses five seconds, but this TV drops the
+  /// stream after roughly four — audio played for two seconds and then the
+  /// set went back to its speakers, every time, just before the second report
+  /// was due. One second costs 32 bytes and removes the race entirely.
+  static const Duration _keepAlive = Duration(seconds: 1);
 
   RawDatagramSocket? _rtp;
   RawDatagramSocket? _rtcp;
@@ -44,6 +49,19 @@ class PrivateListening {
   bool _running = false;
   bool _heardAudio = false;
   int _packets = 0;
+
+  /// Taken from the incoming stream: an RTCP report that does not name the
+  /// sender's SSRC and the sequence reached is not a report the TV can match
+  /// to its own stream, and it keeps sending only while it is satisfied.
+  int? _senderSsrc;
+  int _highestSeq = 0;
+
+  /// Where the TV streams from. RTCP conventionally goes back to the port
+  /// the media came from, not to a fixed one.
+  int? _rtpSourcePort;
+
+  /// Ours, arbitrary but stable for the session.
+  static const int _ourSsrc = 0x524F4B55;
 
   bool get isRunning => _running;
 
@@ -101,12 +119,32 @@ class PrivateListening {
     _decoder = SimpleOpusDecoder(sampleRate: sampleRate, channels: channels);
 
     _rtp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, rtpPort);
-    _rtcp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+    // Bind the port the TV expects to hear from. Falling back to an
+    // ephemeral port keeps the stream alive on phones where 5150 is taken,
+    // even though the TV may then ignore the reports.
+    try {
+      _rtcp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, rtcpPort);
+    } on SocketException {
+      _rtcp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+    }
 
     await FlutterPcmSound.setup(sampleRate: sampleRate, channelCount: channels);
     FlutterPcmSound.start();
 
+    debugPrint('private listening: rtp on ${_rtp?.port}, rtcp from ${_rtcp?.port}');
     _rtpSub = _rtp!.listen(_onRtpEvent);
+    // The TV's own RTCP tells us where it expects replies; we were never
+    // reading it, so any request from the set went unanswered.
+    _rtcp?.listen((event) {
+      if (event != RawSocketEvent.read) return;
+      final datagram = _rtcp?.receive();
+      if (datagram == null) return;
+      debugPrint(
+        'rtcp <- ${datagram.address.address}:${datagram.port} '
+        'pt=${datagram.data.length > 1 ? datagram.data[1] : -1} '
+        'len=${datagram.data.length}',
+      );
+    });
     _running = true;
     _heardAudio = false;
     _packets = 0;
@@ -136,6 +174,15 @@ class PrivateListening {
     if (datagram == null) return;
     final decoded = _decodeRtp(datagram.data);
     if (decoded == null) return;
+
+    final packet = datagram.data;
+    if (_rtpSourcePort == null) {
+      _rtpSourcePort = datagram.port;
+      debugPrint('rtp source ${datagram.address.address}:${datagram.port}');
+    }
+    _senderSsrc = (packet[8] << 24) | (packet[9] << 16) | (packet[10] << 8) | packet[11];
+    final seq = (packet[2] << 8) | packet[3];
+    if (seq > _highestSeq) _highestSeq = seq;
 
     _packets++;
     if (!_heardAudio) {
@@ -193,25 +240,105 @@ class PrivateListening {
     final rtcp = _rtcp;
     if (tv == null || rtcp == null || !_running) return;
     try {
-      rtcp.send(buildReceiverReport(_packets), tv, rtcpPort);
+      final report = buildCompoundReport(
+          ourSsrc: _ourSsrc,
+          senderSsrc: _senderSsrc ?? 0,
+        highestSequence: _highestSeq,
+      );
+      rtcp.send(report, tv, rtcpPort);
+      final source = _rtpSourcePort;
+      if (source != null && source != rtcpPort) {
+        rtcp.send(report, tv, source);
+      }
     } on SocketException {
       // A dropped keepalive is recoverable; the next tick tries again.
     }
   }
 
-  /// An empty RR: version 2, no report blocks, our SSRC. Static for tests.
-  static Uint8List buildReceiverReport(int packetCount) {
-    final report = Uint8List(8);
-    report[0] = 0x80; // version 2, no reception report blocks
-    report[1] = 201; // packet type: receiver report
+  /// A conformant RTCP receiver report: header plus one report block.
+  ///
+  /// The earlier version sent an eight-byte stub with no report block, which
+  /// is well-formed RTCP but tells the TV nothing about the stream it is
+  /// sending. The TV treated that as nobody listening and stopped after a few
+  /// seconds — audio that starts and then dies is the signature of this.
+  static Uint8List buildReceiverReport({
+    required int ourSsrc,
+    required int senderSsrc,
+    required int highestSequence,
+    int fractionLost = 0,
+    int cumulativeLost = 0,
+  }) {
+    final report = Uint8List(32);
+    report[0] = 0x81; // version 2, one reception report block
+    report[1] = 201; // receiver report
     report[2] = 0x00;
-    report[3] = 0x01; // length in 32-bit words minus one
-    // SSRC, arbitrary but stable within a session.
-    report[4] = 0x52;
-    report[5] = 0x4F;
-    report[6] = 0x4B;
-    report[7] = 0x55;
+    report[3] = 0x07; // 32 bytes = 8 words, minus one
+    _writeUint32(report, 4, ourSsrc);
+
+    // Report block: the stream we are reporting on.
+    _writeUint32(report, 8, senderSsrc);
+    report[12] = fractionLost & 0xFF;
+    report[13] = (cumulativeLost >> 16) & 0xFF;
+    report[14] = (cumulativeLost >> 8) & 0xFF;
+    report[15] = cumulativeLost & 0xFF;
+    _writeUint32(report, 16, highestSequence);
+    _writeUint32(report, 20, 0); // interarrival jitter
+    _writeUint32(report, 24, 0); // last sender report
+    _writeUint32(report, 28, 0); // delay since last sender report
     return report;
+  }
+
+  /// A receiver report followed by SDES, which is what RFC 3550 calls a
+  /// compound packet and what the TV actually requires.
+  ///
+  /// A bare receiver report is well-formed on its own but not compliant: the
+  /// spec says every compound packet must carry an SDES chunk with a CNAME.
+  /// The TV sent audio for exactly five seconds and then stopped, regardless
+  /// of how often the bare report was sent, because it was discarding them.
+  static Uint8List buildCompoundReport({
+    required int ourSsrc,
+    required int senderSsrc,
+    required int highestSequence,
+    String cname = 'UniversalRemote',
+  }) {
+    final report = buildReceiverReport(
+      ourSsrc: ourSsrc,
+      senderSsrc: senderSsrc,
+      highestSequence: highestSequence,
+    );
+    final sdes = buildSdes(ourSsrc, cname);
+    return Uint8List.fromList([...report, ...sdes]);
+  }
+
+  /// SDES with a single CNAME item, padded to a 32-bit boundary.
+  static Uint8List buildSdes(int ssrc, String cname) {
+    final text = cname.codeUnits.take(255).toList();
+    // ssrc + item type + item length + text + a terminating zero
+    var chunkLength = 4 + 2 + text.length + 1;
+    final padding = (4 - (chunkLength % 4)) % 4;
+    chunkLength += padding;
+
+    final packet = Uint8List(4 + chunkLength);
+    packet[0] = 0x81; // version 2, one source chunk
+    packet[1] = 202; // SDES
+    final words = (packet.length ~/ 4) - 1;
+    packet[2] = (words >> 8) & 0xFF;
+    packet[3] = words & 0xFF;
+    _writeUint32(packet, 4, ssrc);
+    packet[8] = 1; // CNAME
+    packet[9] = text.length;
+    for (var i = 0; i < text.length; i++) {
+      packet[10 + i] = text[i];
+    }
+    // Remaining bytes are already zero: the item terminator plus padding.
+    return packet;
+  }
+
+  static void _writeUint32(Uint8List target, int offset, int value) {
+    target[offset] = (value >> 24) & 0xFF;
+    target[offset + 1] = (value >> 16) & 0xFF;
+    target[offset + 2] = (value >> 8) & 0xFF;
+    target[offset + 3] = value & 0xFF;
   }
 
   Future<void> stop() async {

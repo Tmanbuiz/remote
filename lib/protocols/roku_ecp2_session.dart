@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -108,7 +110,17 @@ class RokuEcp2Session {
         'request-id': '${_nextId++}',
         'param-response': authResponseFor(challenge),
         'param-client-friendly-name': clientName,
-        'param-has-microphone': 'false',
+        // Private listening is a capability of Roku's voice remote, which has both
+
+        // a microphone and the headphone jack. A client that declares no microphone
+
+        // is handed audio and then cut off after five seconds, so claim the same
+
+        // capabilities the official client does.
+
+        'param-has-microphone': 'true',
+
+        'param-microphone-sample-rates': '1600',
       }));
 
       final reply = _decode(await incoming.next.timeout(_connectTimeout));
@@ -135,6 +147,7 @@ class RokuEcp2Session {
   }
 
   void _onMessage(dynamic raw) {
+    debugPrint('ecp2 <- $raw');
     final msg = _decode(raw);
     final id = msg['response-id'];
     if (id == null) return;
@@ -142,6 +155,7 @@ class RokuEcp2Session {
   }
 
   void _fail(String reason) {
+    debugPrint('ecp2 FAILED: $reason');
     _open = false;
     for (final waiter in _pending.values) {
       waiter.completeError(RemoteTransportException(reason));
