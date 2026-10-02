@@ -222,10 +222,16 @@ class RokuEcp2Session {
   }
 
   /// Hands audio back to the TV speakers.
+  ///
+  /// The value must be one the set lists in query-audio-device: for this TV
+  /// that is "speakers", plural. "default" and "speaker" both answer 404, and
+  /// a failed release leaves the client registered — repeated runs eventually
+  /// produce "Maximum number of clients connected" and the TV stops streaming
+  /// to anyone.
   Future<void> stopAudioStream() async {
     final reply = await _call(
       'set-audio-output',
-      {'param-audio-output': 'default'},
+      {'param-audio-output': 'speakers'},
       timeout: const Duration(seconds: 5),
       onTimeout: 'TV did not answer when handing audio back.',
     );
