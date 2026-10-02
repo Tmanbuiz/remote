@@ -7,6 +7,7 @@ import '../core/tv_device.dart';
 import '../core/tv_protocol.dart';
 import 'guide_page.dart';
 import 'remote_page.dart';
+import 'theme.dart';
 
 class DeviceListPage extends StatefulWidget {
   const DeviceListPage({super.key});
@@ -210,22 +211,82 @@ class _DeviceTile extends StatelessWidget {
       device.host,
     ].join(' · ');
 
-    return ListTile(
-      leading: Icon(_icons[device.brand] ?? Icons.tv),
-      title: Text(device.name),
-      subtitle: Text(subtitle),
-      enabled: supported,
-      trailing: supported
-          ? (onForget == null
-              ? const Icon(Icons.chevron_right)
-              : PopupMenuButton<String>(
-                  onSelected: (_) => onForget!(),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'forget', child: Text('Forget this TV')),
-                  ],
-                ))
-          : const Chip(label: Text('Not yet supported')),
-      onTap: supported ? onTap : null,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: PressFeedback(
+        scale: 0.985,
+        onTap: supported ? onTap : null,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 8, 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF142024), Color(0xFF0C1518)],
+            ),
+            border: Border.all(color: RemoteTheme.hairline),
+          ),
+          child: Opacity(
+            opacity: supported ? 1 : 0.45,
+            child: Row(
+              children: [
+                // A tinted square rather than a bare icon: at a glance the
+                // list reads as a set of devices, not a column of text.
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(13),
+                    color: RemoteTheme.accent.withValues(alpha: 0.12),
+                  ),
+                  child: Icon(_icons[device.brand] ?? Icons.tv,
+                      color: RemoteTheme.accent, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        device.name,
+                        style: const TextStyle(
+                          color: RemoteTheme.text,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                            color: RemoteTheme.textMuted, fontSize: 12.5),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!supported)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: Text('Not yet supported',
+                        style: TextStyle(color: RemoteTheme.textMuted, fontSize: 11)),
+                  )
+                else if (onForget == null)
+                  const Icon(Icons.chevron_right, color: RemoteTheme.textMuted)
+                else
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: RemoteTheme.textMuted),
+                    onSelected: (_) => onForget!(),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'forget', child: Text('Forget this TV')),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

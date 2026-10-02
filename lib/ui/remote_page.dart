@@ -1,13 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/remote_controller.dart';
 import '../core/remote_key.dart';
 import '../protocols/roku_ecp2_session.dart';
+import 'dpad.dart';
 import 'guide_page.dart';
+import 'key_press.dart';
+import 'theme.dart';
 import 'text_entry_bar.dart';
 
 /// The remote itself.
@@ -51,7 +53,7 @@ class RemotePage extends StatelessWidget {
                 ),
               const _TopRow(),
               const SizedBox(height: 20),
-              const _DPad(),
+              const DPad(),
               const SizedBox(height: 20),
               const _RockerRow(),
               const SizedBox(height: 20),
@@ -69,15 +71,12 @@ class RemotePage extends StatelessWidget {
   }
 }
 
-/// Sends a key with a haptic tick, and surfaces failures as a snack bar.
-Future<void> _press(BuildContext context, RemoteKey key) async {
-  final controller = context.read<RemoteController>();
-  // Selection click is the lightest tick available; a remote pressed twenty
-  // times in a row should not buzz like a notification.
-  unawaited(HapticFeedback.selectionClick());
-  await controller.sendKey(key);
-}
-
+/// One round key.
+///
+/// Every key shares the pad's surface treatment — a soft top-left highlight
+/// and a hairline — so the remote reads as one moulded object rather than a
+/// grid of unrelated circles. Keys the TV does not implement stay in place but
+/// recede, because a layout that reshuffles between TVs is harder to learn.
 class _RemoteButton extends StatelessWidget {
   const _RemoteButton({
     required this.icon,
@@ -97,7 +96,7 @@ class _RemoteButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<RemoteController>();
     final enabled = controller.supportedKeys.contains(tvKey);
-    final scheme = Theme.of(context).colorScheme;
+    final accented = tone != null;
 
     return Semantics(
       button: true,
@@ -105,23 +104,34 @@ class _RemoteButton extends StatelessWidget {
       label: label ?? tvKey.name,
       child: Tooltip(
         message: label ?? tvKey.name,
-        child: Material(
-          color: enabled
-              ? (tone ?? scheme.surfaceContainerHighest)
-              : scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: enabled ? () => _press(context, tvKey) : null,
-            child: SizedBox(
-              width: size,
-              height: size,
+        child: PressFeedback(
+          onTap: enabled ? () => pressKey(context, tvKey) : null,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: accented
+                    ? [tone!, Color.lerp(tone!, Colors.black, 0.32)!]
+                    : const [Color(0xFF17262A), Color(0xFF0D171A)],
+              ),
+              border: Border.all(
+                color: accented ? Colors.transparent : RemoteTheme.hairline,
+                width: 1,
+              ),
+              boxShadow: accented
+                  ? [BoxShadow(color: tone!.withValues(alpha: 0.28), blurRadius: 18)]
+                  : null,
+            ),
+            child: Opacity(
+              opacity: enabled ? 1 : 0.32,
               child: Icon(
                 icon,
                 size: size * 0.42,
-                color: enabled
-                    ? scheme.onSurface
-                    : scheme.onSurface.withValues(alpha: 0.3),
+                color: accented ? Colors.white : RemoteTheme.text,
               ),
             ),
           ),
@@ -143,7 +153,7 @@ class _TopRow extends StatelessWidget {
           icon: Icons.power_settings_new,
           tvKey: RemoteKey.power,
           label: 'Power',
-          tone: Theme.of(context).colorScheme.errorContainer,
+          tone: const Color(0xFFD9414E),
         ),
         const _RemoteButton(
           icon: Icons.input,
@@ -167,89 +177,6 @@ class _TopRow extends StatelessWidget {
 
 /// The directional cluster. Laid out as a square so the thumb can find OK
 /// without looking — the whole point of a phone remote used in the dark.
-class _DPad extends StatelessWidget {
-  const _DPad();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Column(
-        children: [
-          const _RemoteButton(
-            icon: Icons.keyboard_arrow_up,
-            tvKey: RemoteKey.up,
-            label: 'Up',
-            size: 68,
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const _RemoteButton(
-                icon: Icons.keyboard_arrow_left,
-                tvKey: RemoteKey.left,
-                label: 'Left',
-                size: 68,
-              ),
-              const SizedBox(width: 12),
-              _RemoteButton(
-                icon: Icons.circle,
-                tvKey: RemoteKey.select,
-                label: 'OK',
-                size: 76,
-                tone: scheme.primaryContainer,
-              ),
-              const SizedBox(width: 12),
-              const _RemoteButton(
-                icon: Icons.keyboard_arrow_right,
-                tvKey: RemoteKey.right,
-                label: 'Right',
-                size: 68,
-              ),
-            ],
-          ),
-          const _RemoteButton(
-            icon: Icons.keyboard_arrow_down,
-            tvKey: RemoteKey.down,
-            label: 'Down',
-            size: 68,
-          ),
-          const SizedBox(height: 8),
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _RemoteButton(
-                icon: Icons.arrow_back,
-                tvKey: RemoteKey.back,
-                label: 'Back',
-                size: 52,
-              ),
-              _RemoteButton(
-                icon: Icons.info_outline,
-                tvKey: RemoteKey.info,
-                label: 'Info',
-                size: 52,
-              ),
-              _RemoteButton(
-                icon: Icons.menu,
-                tvKey: RemoteKey.menu,
-                label: 'Menu',
-                size: 52,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Volume and channel, as paired vertical rockers like a physical remote.
 class _RockerRow extends StatelessWidget {
   const _RockerRow();
 
@@ -277,6 +204,11 @@ class _RockerRow extends StatelessWidget {
   }
 }
 
+/// Volume and channel as a single rocker.
+///
+/// On a physical remote these are one piece that tilts, and the label sits
+/// between the ends. Two separate round keys lose that relationship and cost
+/// twice the width, which matters on a page the thumb has to cover one-handed.
 class _Rocker extends StatelessWidget {
   const _Rocker({
     required this.upKey,
@@ -294,21 +226,80 @@ class _Rocker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _RemoteButton(icon: upIcon, tvKey: upKey, label: '$label up'),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Text(
+    final controller = context.watch<RemoteController>();
+
+    return Container(
+      width: 84,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(42),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF17262A), Color(0xFF0D171A)],
+        ),
+        border: Border.all(color: RemoteTheme.hairline),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _RockerEnd(
+            icon: upIcon,
+            tvKey: upKey,
+            label: '$label up',
+            enabled: controller.supportedKeys.contains(upKey),
+          ),
+          Text(
             label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  letterSpacing: 1.5,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+            style: const TextStyle(
+              color: RemoteTheme.textMuted,
+              fontSize: 10,
+              letterSpacing: 1.8,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          _RockerEnd(
+            icon: downIcon,
+            tvKey: downKey,
+            label: '$label down',
+            enabled: controller.supportedKeys.contains(downKey),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RockerEnd extends StatelessWidget {
+  const _RockerEnd({
+    required this.icon,
+    required this.tvKey,
+    required this.label,
+    required this.enabled,
+  });
+
+  final IconData icon;
+  final RemoteKey tvKey;
+  final String label;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: label,
+      child: PressFeedback(
+        scale: 0.88,
+        onTap: enabled ? () => pressKey(context, tvKey) : null,
+        child: SizedBox(
+          width: 84,
+          height: 64,
+          child: Opacity(
+            opacity: enabled ? 1 : 0.32,
+            child: Icon(icon, size: 26, color: RemoteTheme.text),
           ),
         ),
-        _RemoteButton(icon: downIcon, tvKey: downKey, label: '$label down'),
-      ],
+      ),
     );
   }
 }
@@ -529,7 +520,7 @@ class _DigitButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FilledButton.tonal(
-      onPressed: () => _press(context, RemoteKey.digit(digit)),
+      onPressed: () => pressKey(context, RemoteKey.digit(digit)),
       child: Text('$digit', style: const TextStyle(fontSize: 20)),
     );
   }
