@@ -133,7 +133,8 @@ class _DeviceListPageState extends State<DeviceListPage> {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: SafeArea(
+        child: RefreshIndicator(
         onRefresh: controller.scan,
         child: ListView(
           padding: const EdgeInsets.only(bottom: 32),
@@ -159,6 +160,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
                 (d) => _DeviceTile(device: d, onTap: () => _connect(d)),
               ),
           ],
+        ),
         ),
       ),
     );

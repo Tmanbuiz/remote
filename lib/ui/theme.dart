@@ -55,6 +55,10 @@ abstract final class RemoteTheme {
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.light,
+          // iOS reads statusBarBrightness and ignores the Android key above.
+          // Without it the clock and battery render dark on a near-black bar
+          // and simply vanish.
+          statusBarBrightness: Brightness.dark,
           systemNavigationBarColor: backdrop,
           systemNavigationBarIconBrightness: Brightness.light,
         ),
