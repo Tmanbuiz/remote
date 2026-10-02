@@ -51,19 +51,6 @@ class PrivateListening {
   bool _heardAudio = false;
   int _packets = 0;
 
-  /// Taken from the incoming stream: an RTCP report that does not name the
-  /// sender's SSRC and the sequence reached is not a report the TV can match
-  /// to its own stream, and it keeps sending only while it is satisfied.
-  int? _senderSsrc;
-  int _highestSeq = 0;
-
-  /// Where the TV streams from. RTCP conventionally goes back to the port
-  /// the media came from, not to a fixed one.
-  int? _rtpSourcePort;
-
-  /// Ours, arbitrary but stable for the session.
-  static const int _ourSsrc = 0x524F4B55;
-
   bool get isRunning => _running;
 
   /// Packets received so far — the only honest signal that it is working.
@@ -120,14 +107,12 @@ class PrivateListening {
     _decoder = SimpleOpusDecoder(sampleRate: sampleRate, channels: channels);
 
     _rtp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, rtpPort);
-    // Bind the port the TV expects to hear from. Falling back to an
-    // ephemeral port keeps the stream alive on phones where 5150 is taken,
-    // even though the TV may then ignore the reports.
-    try {
-      _rtcp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, rtcpPort);
-    } on SocketException {
-      _rtcp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
-    }
+    // Deliberately no separate RTCP socket. The TV tracks the client by the
+    // exact address:port it was handed in rtp-address, and only counts
+    // keepalives arriving from that same endpoint. Reports sent from their
+    // own port are well-formed, reach the TV, and are ignored — the stream
+    // then stops after five seconds. Measured: from 6970 it runs for 40
+    // seconds and counting, from 6971 or 5150 it dies at 5.0.
 
     await FlutterPcmSound.setup(sampleRate: sampleRate, channelCount: channels);
     FlutterPcmSound.start();
@@ -186,15 +171,6 @@ class PrivateListening {
     final decoded = _decodeRtp(datagram.data);
     if (decoded == null) return;
 
-    final packet = datagram.data;
-    if (_rtpSourcePort == null) {
-      _rtpSourcePort = datagram.port;
-      debugPrint('rtp source ${datagram.address.address}:${datagram.port}');
-    }
-    _senderSsrc = (packet[8] << 24) | (packet[9] << 16) | (packet[10] << 8) | packet[11];
-    final seq = (packet[2] << 8) | packet[3];
-    if (seq > _highestSeq) _highestSeq = seq;
-
     _packets++;
     if (!_heardAudio) {
       _heardAudio = true;
@@ -248,101 +224,48 @@ class PrivateListening {
   /// Minimal RTCP receiver report. The TV only checks that something arrives.
   void _sendReceiverReport() {
     final tv = _tv;
-    final rtcp = _rtcp;
+    final rtcp = _rtp;
     if (tv == null || rtcp == null || !_running) return;
     try {
-      final report = buildCompoundReport(
-          ourSsrc: _ourSsrc,
-          senderSsrc: _senderSsrc ?? 0,
-        highestSequence: _highestSeq,
-      );
-      rtcp.send(report, tv, rtcpPort);
-      final source = _rtpSourcePort;
-      if (source != null && source != rtcpPort) {
-        rtcp.send(report, tv, source);
-      }
+      // The reference client sends three packets per tick, each with a zero
+      // identifier rather than our own SSRC.
+      rtcp.send(buildApp('VDLY', 500000), tv, rtcpPort);
+      rtcp.send(buildApp('CVER', 808464434), tv, rtcpPort);
+      rtcp.send(buildReceiverReport(), tv, rtcpPort);
     } on SocketException {
       // A dropped keepalive is recoverable; the next tick tries again.
     }
   }
 
-  /// A conformant RTCP receiver report: header plus one report block.
+  /// RTCP APP packet, built exactly as the reference client builds it.
   ///
-  /// The earlier version sent an eight-byte stub with no report block, which
-  /// is well-formed RTCP but tells the TV nothing about the stream it is
-  /// sending. The TV treated that as nobody listening and stopped after a few
-  /// seconds — audio that starts and then dies is the signature of this.
-  static Uint8List buildReceiverReport({
-    required int ourSsrc,
-    required int senderSsrc,
-    required int highestSequence,
-    int fractionLost = 0,
-    int cumulativeLost = 0,
-  }) {
+  /// The identifier field is zero rather than our SSRC. Both forms are
+  /// well-formed RTCP and the TV accepts either; what it will not accept is
+  /// a report from the wrong source port.
+  static Uint8List buildApp(String name, int value) {
+    final packet = Uint8List(16);
+    packet[0] = 0x80; // version 2, no padding, subtype 0
+    packet[1] = 204; // APP
+    packet[2] = 0x00;
+    packet[3] = 0x03; // 16 bytes = 4 words, minus one
+    _writeUint32(packet, 4, 0); // identifier: zero
+    final label = name.codeUnits;
+    for (var i = 0; i < 4 && i < label.length; i++) {
+      packet[8 + i] = label[i];
+    }
+    _writeUint32(packet, 12, value);
+    return packet;
+  }
+
+  /// The fixed receiver report the reference client sends verbatim.
+  static Uint8List buildReceiverReport() {
     final report = Uint8List(32);
     report[0] = 0x81; // version 2, one reception report block
     report[1] = 201; // receiver report
     report[2] = 0x00;
     report[3] = 0x07; // 32 bytes = 8 words, minus one
-    _writeUint32(report, 4, ourSsrc);
-
-    // Report block: the stream we are reporting on.
-    _writeUint32(report, 8, senderSsrc);
-    report[12] = fractionLost & 0xFF;
-    report[13] = (cumulativeLost >> 16) & 0xFF;
-    report[14] = (cumulativeLost >> 8) & 0xFF;
-    report[15] = cumulativeLost & 0xFF;
-    _writeUint32(report, 16, highestSequence);
-    _writeUint32(report, 20, 0); // interarrival jitter
-    _writeUint32(report, 24, 0); // last sender report
-    _writeUint32(report, 28, 0); // delay since last sender report
+    // Everything after the header stays zero, as the reference sends it.
     return report;
-  }
-
-  /// A receiver report followed by SDES, which is what RFC 3550 calls a
-  /// compound packet and what the TV actually requires.
-  ///
-  /// A bare receiver report is well-formed on its own but not compliant: the
-  /// spec says every compound packet must carry an SDES chunk with a CNAME.
-  /// The TV sent audio for exactly five seconds and then stopped, regardless
-  /// of how often the bare report was sent, because it was discarding them.
-  static Uint8List buildCompoundReport({
-    required int ourSsrc,
-    required int senderSsrc,
-    required int highestSequence,
-    String cname = 'UniversalRemote',
-  }) {
-    final report = buildReceiverReport(
-      ourSsrc: ourSsrc,
-      senderSsrc: senderSsrc,
-      highestSequence: highestSequence,
-    );
-    final sdes = buildSdes(ourSsrc, cname);
-    return Uint8List.fromList([...report, ...sdes]);
-  }
-
-  /// SDES with a single CNAME item, padded to a 32-bit boundary.
-  static Uint8List buildSdes(int ssrc, String cname) {
-    final text = cname.codeUnits.take(255).toList();
-    // ssrc + item type + item length + text + a terminating zero
-    var chunkLength = 4 + 2 + text.length + 1;
-    final padding = (4 - (chunkLength % 4)) % 4;
-    chunkLength += padding;
-
-    final packet = Uint8List(4 + chunkLength);
-    packet[0] = 0x81; // version 2, one source chunk
-    packet[1] = 202; // SDES
-    final words = (packet.length ~/ 4) - 1;
-    packet[2] = (words >> 8) & 0xFF;
-    packet[3] = words & 0xFF;
-    _writeUint32(packet, 4, ssrc);
-    packet[8] = 1; // CNAME
-    packet[9] = text.length;
-    for (var i = 0; i < text.length; i++) {
-      packet[10 + i] = text[i];
-    }
-    // Remaining bytes are already zero: the item terminator plus padding.
-    return packet;
   }
 
   static void _writeUint32(Uint8List target, int offset, int value) {

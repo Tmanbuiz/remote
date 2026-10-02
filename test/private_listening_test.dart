@@ -84,43 +84,36 @@ void main() {
     });
   });
 
-  group('RTCP receiver report', () {
-    // The TV stops streaming unless these keep arriving and describe its own
-    // stream, so both the shape and the contents matter.
-    test('carries a header and exactly one report block', () {
-      final report = PrivateListening.buildReceiverReport(
-        ourSsrc: 0x11223344,
-        senderSsrc: 0xAABBCCDD,
-        highestSequence: 0x1234,
-      );
+  group('RTCP keepalive packets', () {
+    // These must match the reference client byte for byte. The identifier is
+    // zero rather than our own SSRC, and the report carries no reception data.
+    test('APP packet carries a zero identifier, name and value', () {
+      final packet = PrivateListening.buildApp('VDLY', 500000);
+      expect(packet.length, 16);
+      expect(packet[0], 0x80, reason: 'version 2, no padding, subtype 0');
+      expect(packet[1], 204, reason: 'packet type 204 is APP');
+      expect((packet[2] << 8) | packet[3], 3, reason: '4 words minus one');
+      expect(packet.sublist(4, 8), [0, 0, 0, 0], reason: 'identifier is zero');
+      expect(String.fromCharCodes(packet.sublist(8, 12)), 'VDLY');
+      expect(packet.sublist(12, 16), [0x00, 0x07, 0xA1, 0x20]);
+    });
+
+    test('CVER carries the client version the TV expects', () {
+      final packet = PrivateListening.buildApp('CVER', 808464434);
+      expect(String.fromCharCodes(packet.sublist(8, 12)), 'CVER');
+      // 808464434 is 0x30303032, which is the ASCII text "0002" — the client
+      // version as a string, which is why the TV reports client-versions as one.
+      expect(packet.sublist(12, 16), [0x30, 0x30, 0x30, 0x32]);
+      expect(String.fromCharCodes(packet.sublist(12, 16)), '0002');
+    });
+
+    test('the receiver report is the fixed 32-byte packet', () {
+      final report = PrivateListening.buildReceiverReport();
       expect(report.length, 32);
-      expect(report[0] >> 6, 2, reason: 'RTP version 2');
-      expect(report[0] & 0x1F, 1, reason: 'exactly one reception report block');
+      expect(report[0], 0x81, reason: 'version 2, one report block');
       expect(report[1], 201, reason: 'packet type 201 is a receiver report');
       expect((report[2] << 8) | report[3], 7, reason: '8 words minus one');
-    });
-
-    test('names our SSRC and the stream being reported on', () {
-      final report = PrivateListening.buildReceiverReport(
-        ourSsrc: 0x11223344,
-        senderSsrc: 0xAABBCCDD,
-        highestSequence: 0x1234,
-      );
-      expect(report.sublist(4, 8), [0x11, 0x22, 0x33, 0x44]);
-      expect(report.sublist(8, 12), [0xAA, 0xBB, 0xCC, 0xDD]);
-      expect(report.sublist(16, 20), [0x00, 0x00, 0x12, 0x34]);
-    });
-
-    test('encodes loss counts across the three-byte field', () {
-      final report = PrivateListening.buildReceiverReport(
-        ourSsrc: 1,
-        senderSsrc: 2,
-        highestSequence: 3,
-        fractionLost: 0x40,
-        cumulativeLost: 0x010203,
-      );
-      expect(report[12], 0x40);
-      expect(report.sublist(13, 16), [0x01, 0x02, 0x03]);
+      expect(report.sublist(4), everyElement(0), reason: 'the rest stays zero');
     });
   });
 
