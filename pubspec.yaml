@@ -48,6 +48,10 @@ dependencies:
   speech_to_text: ^7.0.0
   # Opens wiantribe.com in the browser from the guide and the about banner.
   url_launcher: ^6.3.0
+  # Opus decoding and raw PCM playback for Roku private listening.
+  opus_dart: ^3.0.1
+  opus_flutter: ^3.0.3
+  flutter_pcm_sound: ^3.1.4
 
 dev_dependencies:
   flutter_test:

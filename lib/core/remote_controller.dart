@@ -267,6 +267,43 @@ class RemoteController extends ChangeNotifier {
     }
   }
 
+  /// True while TV audio is playing through this phone.
+  bool get isListening {
+    final protocol = _active;
+    return protocol is RokuProtocol && protocol.privateListening.isRunning;
+  }
+
+  /// Only Roku implements private listening; Samsung and LG have no
+  /// equivalent, so the button is hidden rather than shown broken.
+  bool get supportsPrivateListening => _active is RokuProtocol;
+
+  /// Routes TV audio to this phone's headphones, or hands it back.
+  ///
+  /// Failure here is mostly silent at the protocol level — the TV accepts the
+  /// request and then simply may not stream — so the session reports back
+  /// through onFailure rather than by throwing.
+  Future<void> toggleListening() async {
+    final protocol = _active;
+    if (protocol is! RokuProtocol) return;
+    final session = protocol.privateListening;
+    try {
+      if (session.isRunning) {
+        await session.stop();
+      } else {
+        session.onFailure = (reason) {
+          _error = reason;
+          notifyListeners();
+          session.stop();
+        };
+        session.onFirstAudio = notifyListeners;
+        await session.start(protocol.device.host);
+      }
+    } catch (e) {
+      _error = '$e';
+    }
+    notifyListeners();
+  }
+
   /// Powers on a TV that may be asleep.
   ///
   /// Order matters. A set that kept its network alive in standby — Roku with

@@ -15,6 +15,20 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+// Some plugins still pin an old compileSdk - flutter_pcm_sound sits on 33,
+// while its own androidx dependencies require 34 or later. This has to come
+// before evaluationDependsOn(":app"), which evaluates the subprojects and
+// makes a later afterEvaluate illegal.
+subprojects {
+    afterEvaluate {
+        extensions.findByName("android")?.let { android ->
+            if (android is com.android.build.gradle.BaseExtension) {
+                android.compileSdkVersion(36)
+            }
+        }
+    }
+}
+
 subprojects {
     project.evaluationDependsOn(":app")
 }

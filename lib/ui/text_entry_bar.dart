@@ -30,6 +30,15 @@ class TextEntryBar extends StatelessWidget {
           label: const Text('Keyboard'),
           onPressed: enabled ? () => _showKeyboard(context) : null,
         ),
+        if (controller.supportsPrivateListening)
+          ActionChip(
+            avatar: Icon(
+              controller.isListening ? Icons.headset : Icons.headset_outlined,
+              size: 18,
+            ),
+            label: Text(controller.isListening ? 'Listening' : 'Headphones'),
+            onPressed: enabled ? controller.toggleListening : null,
+          ),
         ActionChip(
           avatar: const Icon(Icons.mic, size: 18),
           label: const Text('Voice search'),

@@ -70,6 +70,12 @@
 	     first time it opens a socket to a LAN address, with no usable error. -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Universal Remote needs to find and control TVs on your Wi-Fi network.</string>
+	<!-- Private listening keeps playing with the screen off; without this
+	     the audio stops the moment the phone locks. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voice search listens only while you hold the microphone button, so you can speak a title instead of typing it on the TV.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

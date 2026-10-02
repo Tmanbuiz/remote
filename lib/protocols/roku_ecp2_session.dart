@@ -189,6 +189,37 @@ class RokuEcp2Session {
     }
   }
 
+  /// Points the TV's audio at this phone, starting private listening.
+  ///
+  /// [endpoint] is `<this phone's LAN address>:<RTP port>`. The TV has no
+  /// other way to learn where to send the stream — there is no negotiation
+  /// and no reply carrying a port, so an address that is wrong or
+  /// unreachable simply produces silence rather than an error.
+  Future<void> startAudioStream(String endpoint) async {
+    final reply = await _call(
+      'set-audio-output',
+      {'param-audio-output': 'datagram', 'param-devname': endpoint},
+      timeout: const Duration(seconds: 5),
+      onTimeout: 'TV did not answer the private listening request.',
+    );
+    if (!accepted(reply['status'])) {
+      throw RemoteTransportException('This TV refused private listening.');
+    }
+  }
+
+  /// Hands audio back to the TV speakers.
+  Future<void> stopAudioStream() async {
+    final reply = await _call(
+      'set-audio-output',
+      {'param-audio-output': 'default'},
+      timeout: const Duration(seconds: 5),
+      onTimeout: 'TV did not answer when handing audio back.',
+    );
+    if (!accepted(reply['status'])) {
+      throw RemoteTransportException('TV would not release private listening.');
+    }
+  }
+
   Future<void> press(String key) async {
     final reply = await _call(
       'key-press',

@@ -2,6 +2,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/remote_key.dart';
 import '../core/tv_protocol.dart';
+import 'private_listening.dart';
 import 'roku_ecp2_session.dart';
 
 /// Roku TVs and streaming players.
@@ -115,6 +116,12 @@ class RokuProtocol extends TvProtocol {
       await _session.press('Lit_$literal');
     }
   }
+
+  /// Private listening, lazily created so the audio stack is only touched
+  /// on a TV the user actually asked to listen through.
+  PrivateListening get privateListening =>
+      _privateListening ??= PrivateListening(_session);
+  PrivateListening? _privateListening;
 
   /// Opens the TV's own search screen.
   Future<void> openSearch() => _session.press('Search');

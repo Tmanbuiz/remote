@@ -49,3 +49,6 @@ app.*.map.json
 
 # Kotlin incremental-compilation cache, written by the Gradle build.
 android/.kotlin/
+
+# Gradle writes reports here; the root ignore only covers /build.
+android/build/
