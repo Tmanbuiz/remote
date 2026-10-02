@@ -94,6 +94,9 @@ class SubnetScanner {
   }
 
   /// Checks one address for each brand's control port, cheapest first.
+  /// Identifies a single host, for an address the user typed in.
+  Future<TvDevice?> probeHost(String host) => _probeHost(host);
+
   Future<TvDevice?> _probeHost(String host) async {
     // A closed TCP port answers fast, so gate the HTTP probes behind a plain
     // socket check rather than paying an HTTP timeout per brand per host.

@@ -108,6 +108,28 @@ class RemoteController extends ChangeNotifier {
   }
 
   /// Pairs, persists the resulting token, and leaves the device connected.
+  /// Looks for a TV at an address the user typed.
+  ///
+  /// Discovery cannot reach every network — client isolation, separate VLANs,
+  /// and iOS without the multicast entitlement all hide TVs that are otherwise
+  /// perfectly reachable. A typed address bypasses discovery entirely.
+  Future<TvDevice?> probe(String host) async {
+    final cleaned = host.trim();
+    if (cleaned.isEmpty) return null;
+    try {
+      final found = await _scanner.probeHost(cleaned);
+      if (found == null) return null;
+      // Prefer the saved record if this TV is already known, so a typed
+      // address does not create a second entry without its pairing token.
+      return _saved.firstWhere(
+        (d) => d.host == found.host,
+        orElse: () => found,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<PairingResult> pairAndSave(TvDevice device) async {
     if (!ProtocolFactory.supported.contains(device.brand)) {
       return PairingResult(

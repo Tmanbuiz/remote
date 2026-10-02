@@ -26,6 +26,69 @@ class _DeviceListPageState extends State<DeviceListPage> {
     });
   }
 
+  /// Adds a TV by typing its address.
+  ///
+  /// Necessary wherever discovery cannot reach: routers with client isolation,
+  /// separate VLANs, and iOS, where multicast needs an entitlement Apple grants
+  /// only on request. Without this the app is unusable on those networks even
+  /// though the TV is perfectly reachable.
+  Future<void> _addByAddress() async {
+    final controller = context.read<RemoteController>();
+    final field = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+
+    final host = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add TV by address'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              "On the TV: Settings, Network, About. Use the IP address shown "
+              "there, for example 192.168.1.20.",
+              style: TextStyle(color: RemoteTheme.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: field,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                hintText: '192.168.1.20',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (value) => Navigator.of(dialogContext).pop(value.trim()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (host == null || host.isEmpty || !mounted) return;
+
+    final found = await controller.probe(host);
+    if (!mounted) return;
+    if (found == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Nothing answered at $host')),
+      );
+      return;
+    }
+    await _connect(found);
+  }
+
   Future<void> _connect(TvDevice device) async {
     final controller = context.read<RemoteController>();
     final messenger = ScaffoldMessenger.of(context);
@@ -118,7 +181,9 @@ class _DeviceListPageState extends State<DeviceListPage> {
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
-              if (value == 'guide') {
+              if (value == 'address') {
+                _addByAddress();
+              } else               if (value == 'guide') {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const GuidePage()),
                 );
@@ -127,6 +192,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'address', child: Text('Add TV by address')),
               PopupMenuItem(value: 'guide', child: Text('How to use')),
               PopupMenuItem(value: 'wiantribe', child: Text('About wiaTribe')),
             ],
