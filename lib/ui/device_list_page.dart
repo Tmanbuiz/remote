@@ -6,7 +6,6 @@ import '../core/remote_controller.dart';
 import '../core/tv_device.dart';
 import '../core/tv_protocol.dart';
 import 'guide_page.dart';
-import 'home_monitor_page.dart';
 import 'remote_page.dart';
 import 'theme.dart';
 
@@ -300,10 +299,6 @@ class _DeviceListPageState extends State<DeviceListPage> {
                 _addByAddress();
               } else if (value == 'relay') {
                 _relaySettings();
-              } else if (value == 'monitor') {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const HomeMonitorPage()),
-                );
               } else if (value == 'guide') {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const GuidePage()),
@@ -315,7 +310,6 @@ class _DeviceListPageState extends State<DeviceListPage> {
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'address', child: Text('Add TV by address')),
               PopupMenuItem(value: 'relay', child: Text('Listen from away')),
-              PopupMenuItem(value: 'monitor', child: Text('Listen to home')),
               PopupMenuItem(value: 'guide', child: Text('How to use')),
               PopupMenuItem(value: 'wiantribe', child: Text('About wiaTribe')),
             ],
