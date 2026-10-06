@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:universal_remote/core/remote_key.dart';
+import 'package:universal_remote/protocols/audio_relay.dart';
+import 'package:universal_remote/protocols/private_listening.dart';
 import 'package:universal_remote/core/tv_device.dart';
 import 'package:universal_remote/core/tv_protocol.dart';
 import 'package:universal_remote/protocols/roku_ecp2_session.dart';
@@ -316,6 +318,44 @@ group('Renaming a TV', () {
         'brand': 'roku',
       };
       expect(TvDevice.fromJson(legacy).displayName, '43" Hisense Roku TV');
+    });
+  });
+group('Audio relay', () {
+    test('the relay and a direct listener agree on the RTP port', () {
+      // The TV only ever sends to this port, so the relay has to claim the
+      // same one the direct path uses.
+      expect(AudioRelay.rtpPort, PrivateListening.rtpPort);
+    });
+
+    test('registration does not collide with audio', () {
+      expect(AudioRelay.controlPort, isNot(AudioRelay.rtpPort));
+    });
+
+    test('a relay forwards nothing until someone registers', () async {
+      final relay = AudioRelay();
+      expect(relay.isRunning, isFalse);
+      expect(relay.hasListener, isFalse);
+      expect(relay.packetsForwarded, 0);
+      expect(relay.lanEndpoint, isNull);
+      // Stopping one that never started is what a cancelled toggle does.
+      await relay.stop();
+      expect(relay.isRunning, isFalse);
+    });
+
+    test('relaying off this phone needs this phone on the TV network', () async {
+      final relay = AudioRelay();
+      await expectLater(
+        relay.start('203.0.113.10'),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('the keepalive packets are the ones the TV accepts', () {
+      // Built by the relay from the same helpers the direct path uses, so a
+      // change to one can never silently diverge from the other.
+      expect(PrivateListening.buildApp('VDLY', 500000).length, 16);
+      expect(PrivateListening.buildReceiverReport().length, 32);
+      expect(PrivateListening.buildReceiverReport()[1], 201);
     });
   });
 }

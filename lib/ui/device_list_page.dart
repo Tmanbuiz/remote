@@ -94,6 +94,62 @@ class _DeviceListPageState extends State<DeviceListPage> {
   /// Sets report names like `70" Hisense Roku TV`, which nobody says out loud
   /// and Siri transcribes unpredictably. "bedroom TV" is both what the user
   /// calls it and what the voice phrase can match.
+  /// Where to collect TV audio from when this phone is not on the TV's network.
+  ///
+  /// Private listening is one-way: the TV fires audio at an address and never
+  /// checks whether anything is there. A phone on the far end of a VPN has an
+  /// address the TV cannot route to, so the stream has to be collected by
+  /// something at home and forwarded. This is where each end is told its part.
+  Future<void> _relaySettings() async {
+    final controller = context.read<RemoteController>();
+    final field = TextEditingController(text: controller.relayHost ?? '');
+    field.selection = TextSelection.collapsed(offset: field.text.length);
+
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Listen from away'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'On the phone you leave at home: open the TV, then Relay audio. '
+              'On this phone: enter the VPN address of that phone below.',
+              style: TextStyle(color: RemoteTheme.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: field,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                hintText: '100.95.6.24',
+                helperText: 'Leave empty to receive the audio directly',
+                helperStyle: TextStyle(color: RemoteTheme.textMuted, fontSize: 11),
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (saved == null || !mounted) return;
+    await controller.setRelayHost(saved);
+  }
+
   Future<void> _rename(TvDevice device) async {
     final controller = context.read<RemoteController>();
     final field = TextEditingController(text: device.nickname ?? '');
@@ -241,7 +297,9 @@ class _DeviceListPageState extends State<DeviceListPage> {
             onSelected: (value) {
               if (value == 'address') {
                 _addByAddress();
-              } else               if (value == 'guide') {
+              } else if (value == 'relay') {
+                _relaySettings();
+              } else if (value == 'guide') {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const GuidePage()),
                 );
@@ -251,6 +309,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'address', child: Text('Add TV by address')),
+              PopupMenuItem(value: 'relay', child: Text('Listen from away')),
               PopupMenuItem(value: 'guide', child: Text('How to use')),
               PopupMenuItem(value: 'wiantribe', child: Text('About wiaTribe')),
             ],

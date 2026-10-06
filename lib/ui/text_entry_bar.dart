@@ -44,6 +44,22 @@ class TextEntryBar extends StatelessWidget {
           label: const Text('Voice search'),
           onPressed: enabled ? () => _showVoice(context) : null,
         ),
+        // Shown on the phone left at home. Listening and relaying are mutually
+        // exclusive — both want port 6970 — so the chip is hidden while this
+        // phone is playing the audio itself.
+        if (controller.supportsPrivateListening && !controller.isListening)
+          ActionChip(
+            avatar: Icon(
+              controller.isRelaying ? Icons.cell_tower : Icons.cell_tower_outlined,
+              size: 18,
+            ),
+            label: Text(
+              controller.isRelaying
+                  ? (controller.relayHasListener ? 'Relaying' : 'Waiting')
+                  : 'Relay audio',
+            ),
+            onPressed: enabled ? controller.toggleRelay : null,
+          ),
       ],
     );
   }

@@ -17,6 +17,7 @@ class DeviceStore {
 
   static const _devicesKey = 'paired_devices_v1';
   static const _lastUsedKey = 'last_used_device_id';
+  static const _relayHostKey = 'audio_relay_host';
 
   static Future<DeviceStore> open() async =>
       DeviceStore(await SharedPreferences.getInstance());
@@ -75,4 +76,19 @@ class DeviceStore {
   }
 
   Future<void> setLastUsed(String id) => _prefs.setString(_lastUsedKey, id);
+
+  /// The VPN address of a phone left at home relaying TV audio, or null when
+  /// this phone is expected to receive the stream directly.
+  String? loadRelayHost() {
+    final value = _prefs.getString(_relayHostKey);
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Future<void> setRelayHost(String? host) async {
+    if (host == null || host.trim().isEmpty) {
+      await _prefs.remove(_relayHostKey);
+    } else {
+      await _prefs.setString(_relayHostKey, host.trim());
+    }
+  }
 }

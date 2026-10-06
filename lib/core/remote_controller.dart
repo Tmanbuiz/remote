@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../discovery/ssdp_discovery.dart';
+import '../protocols/audio_relay.dart';
 import '../protocols/roku_ecp2_session.dart';
 import '../protocols/roku_protocol.dart';
 import '../discovery/subnet_scanner.dart';
@@ -31,6 +32,8 @@ class RemoteController extends ChangeNotifier {
   final SubnetScanner _scanner = SubnetScanner();
 
   List<TvDevice> _saved = [];
+  AudioRelay? _relay;
+  String? _relayHost;
   List<TvDevice> _discovered = [];
   TvProtocol? _active;
   RemoteConnectionState _state = RemoteConnectionState.idle;
@@ -52,6 +55,7 @@ class RemoteController extends ChangeNotifier {
 
   void loadSaved() {
     _saved = _store.loadAll();
+    _relayHost = _store.loadRelayHost();
     notifyListeners();
   }
 
@@ -327,10 +331,48 @@ class RemoteController extends ChangeNotifier {
           session.stop();
         };
         session.onFirstAudio = notifyListeners;
-        await session.start(protocol.device.host);
+        await session.start(protocol.device.host, relayHost: _relayHost);
       }
     } catch (e) {
       _error = '$e';
+    }
+    notifyListeners();
+  }
+
+  // --- Relaying audio out of the house ------------------------------------
+
+  /// Where this phone should collect TV audio from, instead of expecting the
+  /// TV to send it here. Null is the ordinary same-network case.
+  String? get relayHost => _relayHost;
+
+  Future<void> setRelayHost(String? host) async {
+    await _store.setRelayHost(host);
+    _relayHost = _store.loadRelayHost();
+    notifyListeners();
+  }
+
+  bool get isRelaying => _relay?.isRunning ?? false;
+  bool get relayHasListener => _relay?.hasListener ?? false;
+
+  /// Turns this phone into the bridge for a listener elsewhere.
+  ///
+  /// Only useful on the phone left at home: it has to be on the TV's network
+  /// to receive the stream at all.
+  Future<void> toggleRelay() async {
+    final device = activeDevice;
+    if (device == null) return;
+    try {
+      if (_relay?.isRunning ?? false) {
+        await _relay!.stop();
+        _relay = null;
+      } else {
+        final relay = AudioRelay()..onChanged = notifyListeners;
+        await relay.start(device.host);
+        _relay = relay;
+      }
+    } catch (e) {
+      _error = '$e';
+      _relay = null;
     }
     notifyListeners();
   }
@@ -417,6 +459,7 @@ class RemoteController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _relay?.stop();
     _active?.disconnect();
     super.dispose();
   }

@@ -6,6 +6,7 @@ import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
 import 'package:opus_dart/opus_dart.dart';
 import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
 
+import 'audio_relay.dart';
 import 'roku_ecp2_session.dart';
 
 /// Roku private listening: TV audio to this phone's headphones.
@@ -41,6 +42,8 @@ class PrivateListening {
   static const Duration _keepAlive = Duration(seconds: 1);
 
   RawDatagramSocket? _rtp;
+  InternetAddress? _relay;
+  bool _viaRelay = false;
   Timer? _keepAliveTimer;
   Timer? _sessionTimer;
   StreamSubscription<RawSocketEvent>? _rtpSub;
@@ -90,22 +93,47 @@ class PrivateListening {
     return null;
   }
 
-  Future<void> start(String tvHost) async {
+  /// Starts the stream.
+  ///
+  /// [relayHost] routes the audio through a phone left at home, for a listener
+  /// that can reach the TV's control channel over a VPN but cannot receive its
+  /// audio — see AudioRelay. Without it this phone must be on the TV's own
+  /// network, which is the ordinary case.
+  Future<void> start(String tvHost, {String? relayHost}) async {
     if (_running) return;
     await _ensureOpus();
 
-    final local = await localAddressFor(tvHost);
-    if (local == null) {
-      throw StateError(
-        'This phone is not on the same network as the TV, so the audio would '
-        'have nowhere to go.',
-      );
+    _viaRelay = relayHost != null && relayHost.isNotEmpty;
+
+    final String endpoint;
+    if (_viaRelay) {
+      // The relay answers with the address the TV should be given, so the
+      // user never has to know the home phone's LAN address.
+      final announced = await _registerWithRelay(relayHost!);
+      if (announced == null) {
+        throw StateError(
+          'The relay at $relayHost did not answer. Check that the phone at '
+          'home is on the same Wi-Fi as the TV, with relaying switched on.',
+        );
+      }
+      endpoint = announced;
+    } else {
+      final local = await localAddressFor(tvHost);
+      if (local == null) {
+        throw StateError(
+          'This phone is not on the same network as the TV, so the audio would '
+          'have nowhere to go.',
+        );
+      }
+      endpoint = '$local:$rtpPort';
     }
 
     _tv = InternetAddress(tvHost);
     _decoder = SimpleOpusDecoder(sampleRate: sampleRate, channels: channels);
 
-    _rtp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, rtpPort);
+    // Through a relay the port is whatever the registration socket already
+    // claimed, because that is the endpoint the relay learned to forward to.
+    _rtp ??= await RawDatagramSocket.bind(InternetAddress.anyIPv4, rtpPort);
     // Deliberately no separate RTCP socket. The TV tracks the client by the
     // exact address:port it was handed in rtp-address, and only counts
     // keepalives arriving from that same endpoint. Reports sent from their
@@ -123,18 +151,30 @@ class PrivateListening {
     );
     FlutterPcmSound.start();
 
-    debugPrint('private listening: rtp and rtcp on ${_rtp?.port}');
-    _rtpSub = _rtp!.listen(_onRtpEvent);
+    debugPrint('private listening: rtp on ${_rtp?.port}${_viaRelay ? ' via relay' : ''}');
+    // Through a relay the subscription was already made during registration,
+    // and a second listen on the same socket would throw.
+    _rtpSub ??= _rtp!.listen(_onRtpEvent);
     _running = true;
     _heardAudio = false;
     _packets = 0;
 
     // Tell the TV where to send it. Do this last: the stream can begin the
     // instant this returns, and dropping the first packets sounds like a fault.
-    await _session.startAudioStream('$local:$rtpPort');
+    await _session.startAudioStream(endpoint);
 
-    _sendReceiverReport();
-    _keepAliveTimer = Timer.periodic(_keepAlive, (_) => _sendReceiverReport());
+    if (_viaRelay) {
+      // The relay owns the RTCP path — it is the endpoint the TV recognises,
+      // and reports from here would be ignored. Keep announcing instead, so
+      // it knows this listener is still there.
+      _keepAliveTimer = Timer.periodic(
+        const Duration(seconds: 10),
+        (_) => _announce(),
+      );
+    } else {
+      _sendReceiverReport();
+      _keepAliveTimer = Timer.periodic(_keepAlive, (_) => _sendReceiverReport());
+    }
     // Keep the control session talking too. Silence on the WebSocket, not
     // the RTCP path, is the difference between us and the official client.
     _sessionTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
@@ -215,6 +255,54 @@ class PrivateListening {
     return packet.sublist(offset);
   }
 
+  /// Announces this listener to the relay and returns the address the relay
+  /// says to hand the TV.
+  ///
+  /// The socket used here is kept and reused for the audio, because the relay
+  /// forwards to whatever endpoint the announcement arrived from — binding a
+  /// second socket would register a port nothing is listening on.
+  Future<String?> _registerWithRelay(String relayHost) async {
+    _relay = InternetAddress(relayHost);
+    _rtp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+
+    final reply = Completer<String?>();
+    _rtpSub = _rtp!.listen((event) {
+      // Once registered, everything arriving here is audio.
+      if (reply.isCompleted) {
+        _onRtpEvent(event);
+        return;
+      }
+      if (event != RawSocketEvent.read) return;
+      final datagram = _rtp?.receive();
+      if (datagram == null) return;
+      final text = String.fromCharCodes(datagram.data);
+      if (text.contains(':')) reply.complete(text);
+    });
+
+    // Repeated rather than sent once: this is a VPN hop, and the first
+    // datagram over a sleeping tunnel is the one most likely to vanish.
+    for (var attempt = 0; attempt < 5; attempt++) {
+      _announce();
+      final answer = await Future.any([
+        reply.future,
+        Future<String?>.delayed(const Duration(milliseconds: 600), () => null),
+      ]);
+      if (answer != null) return answer;
+    }
+    return null;
+  }
+
+  void _announce() {
+    final relay = _relay;
+    final socket = _rtp;
+    if (relay == null || socket == null) return;
+    try {
+      socket.send(AudioRelay.hello.codeUnits, relay, AudioRelay.controlPort);
+    } on SocketException {
+      // The next tick tries again.
+    }
+  }
+
   /// Minimal RTCP receiver report. The TV only checks that something arrives.
   void _sendReceiverReport() {
     final tv = _tv;
@@ -280,6 +368,8 @@ class PrivateListening {
     _rtpSub = null;
     _rtp?.close();
     _rtp = null;
+    _relay = null;
+    _viaRelay = false;
     _decoder?.destroy();
     _decoder = null;
     try {
