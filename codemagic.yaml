@@ -27,7 +27,11 @@
 definitions:
   env_versions: &env_versions
     flutter: stable
-    xcode: latest
+    # Pinned rather than `latest`. Codemagic moves `latest` whenever Apple
+    # ships a new Xcode, so a build that passed last week can fail untouched.
+    # 26.6 is Codemagic's current default and the best tested against Flutter
+    # stable; raise it deliberately, after a build you watched succeed.
+    xcode: 26.6
     cocoapods: default
 
 workflows:
@@ -121,8 +125,8 @@ workflows:
     publishing:
       email:
         recipients:
-          # Put your own address here to get the .ipa download link by email.
-          - you@example.com
+          # Where the .ipa download link is sent when this workflow finishes.
+          - atoyejet@gmail.com
         notify:
           success: true
           failure: true
