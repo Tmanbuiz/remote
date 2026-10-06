@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/home_monitor.dart';
 import 'core/remote_controller.dart';
 import 'storage/device_store.dart';
 import 'ui/device_list_page.dart';
@@ -19,8 +20,12 @@ class UniversalRemoteApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => RemoteController(store)..loadSaved(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => RemoteController(store)..loadSaved()),
+        // Lives for the whole app so the monitor survives leaving its page.
+        ChangeNotifierProvider(create: (_) => HomeMonitor()),
+      ],
       child: MaterialApp(
         title: 'Universal Remote',
         debugShowCheckedModeBanner: false,
