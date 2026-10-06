@@ -77,7 +77,7 @@
 		<string>audio</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Voice search listens only while you hold the microphone button, so you can speak a title instead of typing it on the TV.</string>
+	<string>Voice search listens only while you hold the microphone button, so you can speak a title instead of typing it on the TV. Listen to home shares this phone's microphone with your other phone, only while you have switched it on in the app.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Speech recognition turns what you say into text that is typed into the TV search box.</string>
 	<!-- Services browsed over Bonjour. iOS requires every service type to be

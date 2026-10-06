@@ -10,6 +10,17 @@
     <!-- Voice search. The recognizer runs on-device where available. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Listen to home. The microphone may only be captured in the background
+         from a foreground service of type "microphone", and that service's
+         notification is what keeps the capture visible. Android 13+ hides it
+         until POST_NOTIFICATIONS is granted, and the app refuses to capture
+         without it. The wake and Wi-Fi locks keep the stream alive with the
+         screen off and are released with the service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:label="Universal Remote"
         android:name="${applicationName}"
@@ -37,6 +48,15 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- stopWithTask is true on purpose: the capture runs in this app's Dart
+             isolate, which dies when the app is swiped away. A service that
+             outlived it would show "Microphone on" for a microphone that is
+             off, so the notification must end with the capture. -->
+        <service
+            android:name=".MicMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"
+            android:stopWithTask="true" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
