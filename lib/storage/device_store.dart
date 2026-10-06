@@ -38,7 +38,12 @@ class DeviceStore {
     final devices = loadAll();
     final idx = devices.indexWhere((d) => d.id == device.id);
     if (idx >= 0) {
-      devices[idx] = device;
+      // A record arriving from discovery or a re-pair carries no nickname,
+      // and overwriting blindly would throw away the name the user chose
+      // without ever telling them. Only an explicit rename clears it.
+      devices[idx] = device.nickname == null
+          ? device.copyWith(nickname: devices[idx].nickname)
+          : device;
     } else {
       devices.add(device);
     }

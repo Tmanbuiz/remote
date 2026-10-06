@@ -28,7 +28,7 @@ class RemotePage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(device?.name ?? 'Remote'),
+        title: Text(device?.displayName ?? 'Remote'),
         actions: [
           _ConnectionDot(state: controller.state),
           IconButton(

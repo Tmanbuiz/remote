@@ -24,8 +24,19 @@ import Foundation
 struct SavedDevice: Decodable {
     let id: String
     let name: String
+    let nickname: String?
     let host: String
     let macAddress: String?
+
+    /// What the user renamed this set to, falling back to what it reports.
+    /// Mirrors TvDevice.displayName in lib/core/tv_device.dart — Siri matches
+    /// on this, which is the point of letting them rename it at all.
+    var displayName: String {
+        if let nickname, !nickname.trimmingCharacters(in: .whitespaces).isEmpty {
+            return nickname.trimmingCharacters(in: .whitespaces)
+        }
+        return name
+    }
 
     private static let devicesKey = "flutter.paired_devices_v1"
     private static let lastUsedKey = "flutter.last_used_device_id"
@@ -130,7 +141,7 @@ struct TVEntity: AppEntity {
 
     init(_ device: SavedDevice) {
         id = device.id
-        name = device.name
+        name = device.displayName
         macAddress = device.macAddress
     }
 
@@ -159,7 +170,7 @@ struct TVQuery: EntityStringQuery {
         let needle = string.lowercased()
         return SavedDevice.all()
             .filter {
-                let name = $0.name.lowercased()
+                let name = $0.displayName.lowercased()
                 return name.contains(needle) || needle.contains(name)
             }
             .map(TVEntity.init)
@@ -205,7 +216,7 @@ struct WakeTVIntent: AppIntent {
             guard let device = SavedDevice.preferred() else {
                 return .result(dialog: "No TV is saved in Universal Remote yet. Open the app and add one first.")
             }
-            name = device.name
+            name = device.displayName
             mac = device.macAddress
         }
 

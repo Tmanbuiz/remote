@@ -89,6 +89,64 @@ class _DeviceListPageState extends State<DeviceListPage> {
     await _connect(found);
   }
 
+  /// Renames a saved TV to something sayable.
+  ///
+  /// Sets report names like `70" Hisense Roku TV`, which nobody says out loud
+  /// and Siri transcribes unpredictably. "bedroom TV" is both what the user
+  /// calls it and what the voice phrase can match.
+  Future<void> _rename(TvDevice device) async {
+    final controller = context.read<RemoteController>();
+    final field = TextEditingController(text: device.nickname ?? '');
+    // Put the caret at the end rather than selecting everything, so typing
+    // appends to an existing name instead of wiping it.
+    field.selection = TextSelection.collapsed(offset: field.text.length);
+
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rename TV'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Reported as "${device.name}". Give it a name you would say out '
+              'loud — "living room TV", "bedroom TV" — and Siri will match it.',
+              style: const TextStyle(color: RemoteTheme.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: field,
+              autofocus: true,
+              textCapitalization: TextCapitalization.none,
+              decoration: const InputDecoration(
+                hintText: 'living room TV',
+                helperText: 'Leave empty to restore the original name',
+                helperStyle: TextStyle(color: RemoteTheme.textMuted, fontSize: 11),
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    // Null is Cancel; empty string is a deliberate "use the reported name".
+    if (chosen == null || !mounted) return;
+    await controller.rename(device, chosen);
+  }
+
   Future<void> _connect(TvDevice device) async {
     final controller = context.read<RemoteController>();
     final messenger = ScaffoldMessenger.of(context);
@@ -136,7 +194,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        title: Text('Pairing with ${device.name}'),
+        title: Text('Pairing with ${device.displayName}'),
         content: const Row(
           children: [
             SizedBox(
@@ -212,6 +270,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
                   device: d,
                   onTap: () => _connect(d),
                   onForget: () => controller.forget(d),
+                  onRename: () => _rename(d),
                 ),
               ),
             ],
@@ -253,11 +312,17 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _DeviceTile extends StatelessWidget {
-  const _DeviceTile({required this.device, required this.onTap, this.onForget});
+  const _DeviceTile({
+    required this.device,
+    required this.onTap,
+    this.onForget,
+    this.onRename,
+  });
 
   final TvDevice device;
   final VoidCallback onTap;
   final VoidCallback? onForget;
+  final VoidCallback? onRename;
 
   static const Map<TvBrand, IconData> _icons = {
     TvBrand.roku: Icons.cast,
@@ -317,7 +382,7 @@ class _DeviceTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        device.name,
+                        device.displayName,
                         style: const TextStyle(
                           color: RemoteTheme.text,
                           fontSize: 16,
@@ -345,8 +410,15 @@ class _DeviceTile extends StatelessWidget {
                 else
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert, color: RemoteTheme.textMuted),
-                    onSelected: (_) => onForget!(),
+                    onSelected: (value) {
+                      if (value == 'rename') {
+                        onRename?.call();
+                      } else {
+                        onForget!();
+                      }
+                    },
                     itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'rename', child: Text('Rename')),
                       PopupMenuItem(value: 'forget', child: Text('Forget this TV')),
                     ],
                   ),

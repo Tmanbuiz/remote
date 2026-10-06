@@ -382,6 +382,22 @@ class RemoteController extends ChangeNotifier {
     }
   }
 
+  /// Renames a saved TV, or restores its reported name when [nickname] is
+  /// blank. The name is what Siri matches on, so this is also how someone
+  /// makes "turn on the bedroom TV" work.
+  Future<void> rename(TvDevice device, String nickname) async {
+    final trimmed = nickname.trim();
+    final updated = trimmed.isEmpty
+        ? device.copyWith(clearNickname: true)
+        : device.copyWith(nickname: trimmed);
+    await _store.save(updated);
+    _saved = _store.loadAll();
+    if (_active?.device.id == device.id) {
+      _active?.device = updated;
+    }
+    notifyListeners();
+  }
+
   Future<void> forget(TvDevice device) async {
     if (_active?.device.id == device.id) {
       await _active?.disconnect();

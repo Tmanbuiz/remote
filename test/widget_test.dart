@@ -270,4 +270,52 @@ void main() {
       );
     });
   });
+group('Renaming a TV', () {
+    const reported = TvDevice(
+      id: 'serial-1',
+      name: '70" Hisense Roku TV',
+      host: '10.0.0.213',
+      brand: TvBrand.roku,
+    );
+
+    test('displayName falls back to the name the set reports', () {
+      expect(reported.displayName, '70" Hisense Roku TV');
+    });
+
+    test('a nickname takes precedence, trimmed', () {
+      final named = reported.copyWith(nickname: '  living room TV  ');
+      expect(named.displayName, 'living room TV');
+      // The reported name is kept, not overwritten.
+      expect(named.name, '70" Hisense Roku TV');
+    });
+
+    test('whitespace alone is not a name', () {
+      expect(reported.copyWith(nickname: '   ').displayName, '70" Hisense Roku TV');
+    });
+
+    test('clearNickname restores the reported name', () {
+      final named = reported.copyWith(nickname: 'bedroom TV');
+      expect(named.copyWith(clearNickname: true).displayName, '70" Hisense Roku TV');
+    });
+
+    test('copyWith leaves an existing nickname alone', () {
+      final named = reported.copyWith(nickname: 'bedroom TV');
+      expect(named.copyWith(host: '10.0.0.9').displayName, 'bedroom TV');
+    });
+
+    test('the nickname survives a JSON round trip', () {
+      final named = reported.copyWith(nickname: 'family room');
+      expect(TvDevice.fromJson(named.toJson()).displayName, 'family room');
+    });
+
+    test('a record saved before renaming existed still loads', () {
+      final legacy = {
+        'id': 'serial-1',
+        'name': '43" Hisense Roku TV',
+        'host': '10.0.0.152',
+        'brand': 'roku',
+      };
+      expect(TvDevice.fromJson(legacy).displayName, '43" Hisense Roku TV');
+    });
+  });
 }

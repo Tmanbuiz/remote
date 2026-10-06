@@ -26,6 +26,7 @@ class TvDevice {
     required this.name,
     required this.host,
     required this.brand,
+    this.nickname,
     this.port,
     this.model,
     this.macAddress,
@@ -34,7 +35,17 @@ class TvDevice {
 
   /// Stable across rediscovery — usually the UPnP USN or the set's serial.
   final String id;
+  /// The name the set reports, such as `70" Hisense Roku TV`.
   final String name;
+
+  /// What the user renamed it to, such as `living room TV`.
+  ///
+  /// Kept separate from [name] rather than overwriting it, so rediscovery can
+  /// refresh what the set reports without silently discarding the name the
+  /// user chose, and so clearing it restores the original instead of leaving
+  /// the device nameless.
+  final String? nickname;
+
   final String host;
   final TvBrand brand;
 
@@ -48,10 +59,18 @@ class TvDevice {
 
   final String? pairingToken;
 
+  /// What the interface shows, and what Siri matches a spoken name against.
+  String get displayName =>
+      (nickname != null && nickname!.trim().isNotEmpty) ? nickname!.trim() : name;
+
   bool get isPaired => pairingToken != null && pairingToken!.isNotEmpty;
 
+  /// [clearNickname] exists because `nickname: null` cannot distinguish
+  /// "leave it as it is" from "remove it" in this idiom.
   TvDevice copyWith({
     String? name,
+    String? nickname,
+    bool clearNickname = false,
     String? host,
     int? port,
     String? model,
@@ -61,6 +80,7 @@ class TvDevice {
     return TvDevice(
       id: id,
       name: name ?? this.name,
+      nickname: clearNickname ? null : (nickname ?? this.nickname),
       host: host ?? this.host,
       brand: brand,
       port: port ?? this.port,
@@ -73,6 +93,7 @@ class TvDevice {
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
+        'nickname': nickname,
         'host': host,
         'brand': brand.name,
         'port': port,
@@ -84,6 +105,7 @@ class TvDevice {
   factory TvDevice.fromJson(Map<String, dynamic> json) => TvDevice(
         id: json['id'] as String,
         name: json['name'] as String,
+        nickname: json['nickname'] as String?,
         host: json['host'] as String,
         brand: TvBrand.values.firstWhere(
           (b) => b.name == json['brand'],
@@ -102,5 +124,5 @@ class TvDevice {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'TvDevice($name, ${brand.label}, $host)';
+  String toString() => 'TvDevice($displayName, ${brand.label}, $host)';
 }
