@@ -115,29 +115,107 @@ enum WakeOnLan {
     }
 }
 
-// MARK: - The intent
+// MARK: - A saved TV, as something Siri can name
+
+/// Exposes the saved TVs to Siri so a phrase can pick one.
+///
+/// Without this there is a single "my TV" and it is whichever was used last,
+/// which is wrong in a house with more than one set: the phrase you say is
+/// identical whether you mean the 43" or the 70".
+@available(iOS 16.0, *)
+struct TVEntity: AppEntity {
+    let id: String
+    let name: String
+    let macAddress: String?
+
+    init(_ device: SavedDevice) {
+        id = device.id
+        name = device.name
+        macAddress = device.macAddress
+    }
+
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "TV")
+    static var defaultQuery = TVQuery()
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(name)")
+    }
+}
+
+/// EntityStringQuery rather than plain EntityQuery: the string form is what
+/// lets Siri match the name the user actually said against the saved list.
+@available(iOS 16.0, *)
+struct TVQuery: EntityStringQuery {
+    func entities(for identifiers: [TVEntity.ID]) async throws -> [TVEntity] {
+        SavedDevice.all()
+            .filter { identifiers.contains($0.id) }
+            .map(TVEntity.init)
+    }
+
+    /// Matched loosely on purpose. Siri transcribes "the 70 inch" in ways that
+    /// will not equal the stored name, so a substring test either way round
+    /// beats an exact comparison that fails silently.
+    func entities(matching string: String) async throws -> [TVEntity] {
+        let needle = string.lowercased()
+        return SavedDevice.all()
+            .filter {
+                let name = $0.name.lowercased()
+                return name.contains(needle) || needle.contains(name)
+            }
+            .map(TVEntity.init)
+    }
+
+    /// What Siri offers when the phrase names no TV, and what the Shortcuts
+    /// app lists in the picker.
+    func suggestedEntities() async throws -> [TVEntity] {
+        SavedDevice.all().map(TVEntity.init)
+    }
+}
+
+// MARK: - The intents
 
 @available(iOS 16.0, *)
 struct WakeTVIntent: AppIntent {
     static var title: LocalizedStringResource = "Turn on my TV"
     static var description = IntentDescription(
-        "Wakes the TV saved in Universal Remote, without opening the app."
+        "Wakes a TV saved in Universal Remote, without opening the app."
     )
 
     // False is the whole point: this runs with the phone locked.
     static var openAppWhenRun: Bool = false
 
+    /// Optional so the older phrases keep working untouched. Naming no TV
+    /// means the last one used, exactly as before; an optional parameter is
+    /// never prompted for, so "turn on my TV" still runs without a question.
+    @Parameter(title: "TV")
+    var tv: TVEntity?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Turn on \(\.$tv)")
+    }
+
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let device = SavedDevice.preferred() else {
-            return .result(dialog: "No TV is saved in Universal Remote yet. Open the app and add one first.")
+        let name: String
+        let mac: String?
+
+        if let chosen = tv {
+            name = chosen.name
+            mac = chosen.macAddress
+        } else {
+            guard let device = SavedDevice.preferred() else {
+                return .result(dialog: "No TV is saved in Universal Remote yet. Open the app and add one first.")
+            }
+            name = device.name
+            mac = device.macAddress
         }
-        guard let mac = device.macAddress, !mac.isEmpty else {
-            return .result(dialog: "\(device.name) has no wake address saved. Open the app while the TV is on, then try again.")
+
+        guard let mac, !mac.isEmpty else {
+            return .result(dialog: "\(name) has no wake address saved. Open the app while the TV is on, then try again.")
         }
         guard WakeOnLan.send(mac: mac) else {
-            return .result(dialog: "Could not send the wake signal to \(device.name).")
+            return .result(dialog: "Could not send the wake signal to \(name).")
         }
-        return .result(dialog: "Turning on \(device.name).")
+        return .result(dialog: "Turning on \(name).")
     }
 }
 
@@ -160,6 +238,11 @@ struct RemoteAppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: WakeTVIntent(),
             phrases: [
+                // Naming a TV. Siri fills the parameter from TVQuery.
+                "Turn on \(\.$tv) with \(.applicationName)",
+                "Turn on the \(\.$tv) with \(.applicationName)",
+                "Wake \(\.$tv) with \(.applicationName)",
+                // Naming none, which still means the TV used last.
                 "Turn on my TV with \(.applicationName)",
                 "Wake my TV with \(.applicationName)",
                 "Turn the TV on with \(.applicationName)"
