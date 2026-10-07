@@ -311,7 +311,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
               PopupMenuItem(value: 'address', child: Text('Add TV by address')),
               PopupMenuItem(value: 'relay', child: Text('Listen from away')),
               PopupMenuItem(value: 'guide', child: Text('How to use')),
-              PopupMenuItem(value: 'wiantribe', child: Text('About wiaTribe')),
+              PopupMenuItem(value: 'wiantribe', child: Text('About WianTribe')),
             ],
           ),
         ],

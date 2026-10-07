@@ -141,7 +141,7 @@ class _WianTribeBanner extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'wiaTribe',
+                'WianTribe',
                 style: theme.textTheme.headlineSmall?.copyWith(
                   color: theme.colorScheme.onPrimaryContainer,
                   fontWeight: FontWeight.bold,
@@ -177,7 +177,7 @@ class _WianTribeBanner extends StatelessWidget {
   }
 }
 
-/// Opens the wiaTribe site in the phone's browser.
+/// Opens the WianTribe site in the phone's browser.
 Future<void> openWianTribe() async {
   final uri = Uri.parse(kWianTribeUrl);
   await launchUrl(uri, mode: LaunchMode.externalApplication);
