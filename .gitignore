@@ -52,3 +52,9 @@ android/.kotlin/
 
 # Gradle writes reports here; the root ignore only covers /build.
 android/build/
+
+# Android release signing — never commit the upload key or its password.
+# Back these up outside the repo; losing the keystore means asking Google to
+# reset the upload key.
+android/keystore.properties
+android/*.jks
