@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:universal_remote/core/error_text.dart';
 import 'package:universal_remote/core/remote_key.dart';
 import 'package:universal_remote/core/session_retry.dart';
 import 'package:universal_remote/protocols/audio_relay.dart';
@@ -460,6 +461,27 @@ group('Audio relay', () {
         throwsA(isA<StateError>()),
       );
       expect(reconnects, 0);
+    });
+  });
+
+  group('Error text shown to the user', () {
+    test('our own exceptions show the message, not the class name', () {
+      expect(describeError(RemoteTransportException('Remote session is not open.')),
+          'Remote session is not open.');
+      expect(describeError(RemoteAuthException('TV declined the remote session.')),
+          'TV declined the remote session.');
+    });
+
+    test('a StateError shows its message', () {
+      expect(describeError(StateError('not on the same network')), 'not on the same network');
+    });
+
+    test('generic exceptions lose the Exception prefix', () {
+      expect(describeError(Exception('socket gone')), 'socket gone');
+    });
+
+    test('anything else is still shown rather than hidden', () {
+      expect(describeError(42), '42');
     });
   });
 }

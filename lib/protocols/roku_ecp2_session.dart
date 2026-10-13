@@ -57,6 +57,11 @@ class RokuEcp2Session {
 
   bool get isOpen => _open;
 
+  /// Fired when an open session ends without anyone asking it to: the TV closed
+  /// the channel, or the socket failed. Not fired for [close], so a deliberate
+  /// disconnect is never mistaken for a loss.
+  void Function()? onClosed;
+
   /// `base64(sha1(challenge + authKey))` — the response the TV expects.
   static String authResponseFor(String challenge) {
     final bytes = <int>[
@@ -156,11 +161,13 @@ class RokuEcp2Session {
 
   void _fail(String reason) {
     debugPrint('ecp2 FAILED: $reason');
+    final wasOpen = _open;
     _open = false;
     for (final waiter in _pending.values) {
       waiter.completeError(RemoteTransportException(reason));
     }
     _pending.clear();
+    if (wasOpen) onClosed?.call();
   }
 
   Future<void> close() async {

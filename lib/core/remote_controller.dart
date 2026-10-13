@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../discovery/ssdp_discovery.dart';
 import '../protocols/audio_relay.dart';
@@ -9,6 +9,7 @@ import '../protocols/roku_ecp2_session.dart';
 import '../protocols/roku_protocol.dart';
 import '../discovery/subnet_scanner.dart';
 import '../storage/device_store.dart';
+import 'error_text.dart';
 import 'protocol_factory.dart';
 import 'remote_key.dart';
 import 'session_retry.dart';
@@ -25,7 +26,7 @@ enum RemoteConnectionState { idle, connecting, connected, failed }
 /// press that fails on a stale socket silently reconnects and retries once
 /// before it is reported as an error. Without that, the app feels broken every
 /// time it comes back from the background.
-class RemoteController extends ChangeNotifier {
+class RemoteController extends ChangeNotifier with WidgetsBindingObserver {
   RemoteController(this._store);
 
   final DeviceStore _store;
@@ -34,6 +35,9 @@ class RemoteController extends ChangeNotifier {
 
   List<TvDevice> _saved = [];
   AudioRelay? _relay;
+  Future<void>? _rebuilding;
+  DateTime? _lastRebuilt;
+  bool _observing = false;
   String? _relayHost;
   List<TvDevice> _discovered = [];
   TvProtocol? _active;
@@ -57,6 +61,10 @@ class RemoteController extends ChangeNotifier {
   void loadSaved() {
     _saved = _store.loadAll();
     _relayHost = _store.loadRelayHost();
+    if (!_observing) {
+      WidgetsBinding.instance.addObserver(this);
+      _observing = true;
+    }
     notifyListeners();
   }
 
@@ -152,7 +160,7 @@ class RemoteController extends ChangeNotifier {
     try {
       result = await protocol.pair();
     } catch (e) {
-      result = PairingResult(PairingStatus.failed, message: '$e');
+      result = PairingResult(PairingStatus.failed, message: describeError(e));
     }
 
     if (result.isSuccess) {
@@ -162,6 +170,7 @@ class RemoteController extends ChangeNotifier {
       _saved = _store.loadAll();
       _discovered = _discovered.where((d) => d.id != paired.id).toList();
       _active = protocol;
+      _watch(protocol);
       _state = RemoteConnectionState.connected;
     } else {
       _state = RemoteConnectionState.failed;
@@ -183,6 +192,7 @@ class RemoteController extends ChangeNotifier {
 
     final protocol = ProtocolFactory.create(device);
     _active = protocol;
+    _watch(protocol);
     try {
       await protocol.connect();
       _state = RemoteConnectionState.connected;
@@ -192,7 +202,7 @@ class RemoteController extends ChangeNotifier {
       _saved = _store.loadAll();
     } catch (e) {
       _state = RemoteConnectionState.failed;
-      _error = '$e';
+      _error = describeError(e);
     }
     notifyListeners();
   }
@@ -245,15 +255,83 @@ class RemoteController extends ChangeNotifier {
   Future<T> _live<T>(RokuProtocol protocol, Future<T> Function() action) {
     return withLiveSession<T>(
       isOpen: () => protocol.isConnected,
-      reconnect: () async {
+      reconnect: () => _rebuild(protocol),
+      action: action,
+    );
+  }
+
+  /// Rebuilds a session. A call that fails on a dead socket and the loss signal
+  /// for that same socket arrive together; sharing one rebuild stops them
+  /// tearing each other's new connection down.
+  Future<void> _rebuild(TvProtocol protocol) {
+    return _rebuilding ??= () async {
+      try {
         await protocol.disconnect();
         await protocol.connect();
+        _lastRebuilt = DateTime.now();
         _state = RemoteConnectionState.connected;
         _error = null;
         notifyListeners();
-      },
-      action: action,
-    );
+      } finally {
+        _rebuilding = null;
+      }
+    }();
+  }
+
+  void _watch(TvProtocol protocol) {
+    protocol.onConnectionLost = () => _onLost(protocol);
+  }
+
+  /// The TV closed the channel, or the socket failed, and nobody asked it to.
+  ///
+  /// The TV closes idle sessions and iOS suspends sockets in the background, so
+  /// this is routine, not a fault. Reconnect quietly instead of leaving a green
+  /// dot over a dead connection.
+  void _onLost(TvProtocol protocol) {
+    if (!identical(_active, protocol)) return;
+    final last = _lastRebuilt;
+    // A session that dies seconds after being rebuilt is the TV refusing us, not
+    // an idle drop. Reconnecting again would loop; report it instead.
+    final flapping =
+        last != null && DateTime.now().difference(last) < const Duration(seconds: 3);
+    if (flapping) {
+      _state = RemoteConnectionState.failed;
+      _error = 'Lost connection to ${protocol.device.displayName}';
+      notifyListeners();
+      return;
+    }
+    unawaited(_recover(protocol));
+  }
+
+  Future<void> _recover(TvProtocol protocol) async {
+    _state = RemoteConnectionState.connecting;
+    notifyListeners();
+    try {
+      await _rebuild(protocol);
+    } catch (_) {
+      _state = RemoteConnectionState.failed;
+      _error = 'Lost connection to ${protocol.device.displayName}';
+      notifyListeners();
+    }
+  }
+
+  /// Called when the app returns to the foreground. A socket that died while the
+  /// app was suspended can still read as open, so ask the TV something.
+  Future<void> verifyConnection() async {
+    final protocol = _active;
+    if (protocol is! RokuProtocol || _state == RemoteConnectionState.idle) return;
+    if (_rebuilding != null) return;
+    try {
+      if (!protocol.isConnected) throw RemoteTransportException('Session closed.');
+      await protocol.verify();
+    } catch (_) {
+      await _recover(protocol);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(verifyConnection());
   }
 
   /// The TV's installed channels and inputs, or an empty list on a set whose
@@ -359,7 +437,7 @@ class RemoteController extends ChangeNotifier {
       // Not the raw exception name: this is shown to someone holding a remote.
       _error = 'Private listening could not start: ${e.message}';
     } catch (e) {
-      _error = '$e';
+      _error = describeError(e);
     }
     notifyListeners();
   }
@@ -396,7 +474,7 @@ class RemoteController extends ChangeNotifier {
         _relay = relay;
       }
     } catch (e) {
-      _error = '$e';
+      _error = describeError(e);
       _relay = null;
     }
     notifyListeners();
@@ -444,7 +522,7 @@ class RemoteController extends ChangeNotifier {
     try {
       await protocol.sendText(text);
     } catch (e) {
-      _error = '$e';
+      _error = describeError(e);
       notifyListeners();
     }
   }
@@ -484,6 +562,7 @@ class RemoteController extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_observing) WidgetsBinding.instance.removeObserver(this);
     _relay?.stop();
     _active?.disconnect();
     super.dispose();

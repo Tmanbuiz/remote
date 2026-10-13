@@ -17,7 +17,9 @@ import 'roku_ecp2_session.dart';
 class RokuProtocol extends TvProtocol {
   RokuProtocol(super.device, {http.Client? client, RokuEcp2Session? session})
       : _client = client ?? http.Client(),
-        _session = session ?? RokuEcp2Session();
+        _session = session ?? RokuEcp2Session() {
+    _session.onClosed = () => onConnectionLost?.call();
+  }
 
   final http.Client _client;
   final RokuEcp2Session _session;
@@ -149,6 +151,10 @@ class RokuProtocol extends TvProtocol {
       return null;
     }
   }
+
+  /// A real round trip on the open session. [isConnected] only reads a flag, and
+  /// a socket that died while the app was suspended can still read as open.
+  Future<void> verify() => _session.heartbeat();
 
   @override
   Future<bool> ping() async {

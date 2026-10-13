@@ -66,6 +66,10 @@ abstract class TvProtocol {
   /// successful reachability probe.
   bool get isConnected;
 
+  /// Set by whoever owns this protocol, to hear about a session that ended on
+  /// its own. Adapters with no persistent session never call it.
+  void Function()? onConnectionLost;
+
   Future<PairingResult> pair();
 
   /// Only meaningful after [PairingStatus.pinRequired].
