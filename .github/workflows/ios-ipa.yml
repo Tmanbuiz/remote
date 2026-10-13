@@ -55,7 +55,7 @@ jobs:
           set -euo pipefail
           REMOTE_APP_DIR="build/ios/iphoneos/Runner.app"
           test -d "$REMOTE_APP_DIR"
-          xcrun lipo -verify_arch arm64 "$REMOTE_APP_DIR/Runner"
+          xcrun lipo "$REMOTE_APP_DIR/Runner" -verify_arch arm64
           python3 - <<'PY'
           import pathlib, plistlib
           app = pathlib.Path('build/ios/iphoneos/Runner.app')

@@ -65,26 +65,27 @@ class MqttVidaaTransport implements VidaaTransport {
       ..useCertificateChainBytes(utf8.encode(certificate))
       ..usePrivateKeyBytes(utf8.encode(key));
     String? observed;
-    final client = MqttServerClient.withPort(
-      host,
-      credentials.clientId,
-      port,
-      maxConnectionAttempts: 1,
-    )
-      ..secure = true
-      ..securityContext = context
-      ..setProtocolV311()
-      ..keepAlivePeriod = 20
-      ..connectTimeoutPeriod = 8000
-      ..autoReconnect = false
-      ..logging(on: false)
-      ..onBadCertificate = (cert) {
-        observed = certificateFingerprint(cert.pem);
-        return fingerprint == null || fingerprint == observed;
-      }
-      ..connectionMessage = MqttConnectMessage()
-          .withClientIdentifier(credentials.clientId)
-          .startClean();
+    final client =
+        MqttServerClient.withPort(
+            host,
+            credentials.clientId,
+            port,
+            maxConnectionAttempts: 1,
+          )
+          ..secure = true
+          ..securityContext = context
+          ..setProtocolV311()
+          ..keepAlivePeriod = 20
+          ..connectTimeoutPeriod = 8000
+          ..autoReconnect = false
+          ..logging(on: false)
+          ..onBadCertificate = (cert) {
+            observed = certificateFingerprint(cert.pem);
+            return fingerprint == null || fingerprint == observed;
+          }
+          ..connectionMessage = MqttConnectMessage()
+              .withClientIdentifier(credentials.clientId)
+              .startClean();
     try {
       await client.connect(credentials.username, credentials.password);
       if (client.connectionStatus?.state != MqttConnectionState.connected ||

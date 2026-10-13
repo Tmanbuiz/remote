@@ -73,11 +73,12 @@ Protocol vectors are checked against independent Python/cryptography results.
 Tests exercise fragmented/coalesced Android frames, certificate/PIN binding,
 handshake order, capabilities, live-session ownership, cancellation, VIDAA
 authorization, retained-message rejection, token persistence and reconnect.
-The CI workflow is configured to analyze the Flutter code, run tests and build
-an Android ARM64 preview. The initial run was blocked by GitHub before any steps
-started: its annotation reports an account payment or spending-limit issue.
-Flutter tests, dependency resolution and APK compilation have therefore not yet
-run successfully for this change. No preview APK is available from that run.
+Flutter analysis and all 76 automated tests passed on both Linux and macOS.
+The Android ARM64 preview APK and unsigned iPhone release app compiled
+successfully. The **iOS unsigned IPA** workflow checks the device architecture,
+bundle identifier, version and Flutter frameworks before packaging an IPA and
+SHA-256 checksum. The IPA requires signing with a sideloading tool before
+installation. These checks do not include physical-device pairing.
 
 Physical Google/Android/VIDAA TVs were not available in the development workspace.
 The adapters need testing on each target TV and firmware; passing fixture tests
@@ -97,7 +98,6 @@ after one day to limit storage usage.
 - [VIDAA protocol reference](https://github.com/tombabolewski/vidaa-control)
 - [Official VIDAA connection guide](https://www.vidaa.com/customer_support/how-can-i-connect-the-vidaa-app-to-my-tv/)
 
-If GitHub Actions is blocked, the existing Codemagic **Android APK** workflow
-can run analysis, tests and APK compilation on branch `codex/android-vidaa`.
-It requires access to the owner's Codemagic account; no build was started there
-during this change. The Android preview remains pending until a build succeeds.
+The existing Codemagic **Android APK** and **ios-unsigned** workflows provide
+an alternative build route on branch `codex/android-vidaa`. They require access
+to the owner's Codemagic account. No build was started there during this change.
