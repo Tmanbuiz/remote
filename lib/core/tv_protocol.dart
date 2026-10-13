@@ -72,9 +72,10 @@ abstract class TvProtocol {
   Future<PairingResult> pair();
 
   /// Only meaningful after [PairingStatus.pinRequired].
-  Future<PairingResult> submitPin(String pin) async =>
-      const PairingResult(PairingStatus.failed,
-          message: 'This device does not use PIN pairing');
+  Future<PairingResult> submitPin(String pin) async => const PairingResult(
+    PairingStatus.failed,
+    message: 'This device does not use PIN pairing',
+  );
 
   Future<void> connect();
 
@@ -91,4 +92,3 @@ abstract class TvProtocol {
   /// Cheap liveness probe used by the reconnect loop.
   Future<bool> ping();
 }
-

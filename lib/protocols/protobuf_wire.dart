@@ -15,12 +15,21 @@ class Proto {
     return out;
   }
 
-  static List<int> number(int field, int value) =>
-      [...varint(field << 3), ...varint(value)];
-  static List<int> bytes(int field, List<int> value) =>
-      [...varint((field << 3) | 2), ...varint(value.length), ...value];
-  static List<int> text(int field, String value) => bytes(field, utf8.encode(value));
-  static List<int> frame(List<int> message) => [...varint(message.length), ...message];
+  static List<int> number(int field, int value) => [
+    ...varint(field << 3),
+    ...varint(value),
+  ];
+  static List<int> bytes(int field, List<int> value) => [
+    ...varint((field << 3) | 2),
+    ...varint(value.length),
+    ...value,
+  ];
+  static List<int> text(int field, String value) =>
+      bytes(field, utf8.encode(value));
+  static List<int> frame(List<int> message) => [
+    ...varint(message.length),
+    ...message,
+  ];
 
   static Map<int, List<Object>> decode(List<int> data) {
     final fields = <int, List<Object>>{};
@@ -28,13 +37,16 @@ class Proto {
     int readNumber() {
       var value = 0;
       for (var shift = 0; shift < 63; shift += 7) {
-        if (pos >= data.length) throw const FormatException('Truncated protobuf');
+        if (pos >= data.length) {
+          throw const FormatException('Truncated protobuf');
+        }
         final byte = data[pos++];
         value |= (byte & 127) << shift;
         if ((byte & 128) == 0) return value;
       }
       throw const FormatException('Invalid protobuf varint');
     }
+
     while (pos < data.length) {
       final tag = readNumber();
       final field = tag >> 3;
@@ -58,14 +70,21 @@ class Proto {
     return fields;
   }
 
-  static int integer(Map<int, List<Object>> fields, int tag, [int fallback = 0]) =>
-      fields[tag]?.firstOrNull is int ? fields[tag]!.first as int : fallback;
-  static Map<int, List<Object>> nested(Map<int, List<Object>> fields, int tag) =>
-      fields[tag]?.firstOrNull is Uint8List
-          ? decode(fields[tag]!.first as Uint8List) : {};
+  static int integer(
+    Map<int, List<Object>> fields,
+    int tag, [
+    int fallback = 0,
+  ]) => fields[tag]?.firstOrNull is int ? fields[tag]!.first as int : fallback;
+  static Map<int, List<Object>> nested(
+    Map<int, List<Object>> fields,
+    int tag,
+  ) => fields[tag]?.firstOrNull is Uint8List
+      ? decode(fields[tag]!.first as Uint8List)
+      : {};
   static String string(Map<int, List<Object>> fields, int tag) =>
       fields[tag]?.firstOrNull is Uint8List
-          ? utf8.decode(fields[tag]!.first as Uint8List) : '';
+      ? utf8.decode(fields[tag]!.first as Uint8List)
+      : '';
 }
 
 class ProtoFrames {
@@ -82,7 +101,11 @@ class ProtoFrames {
       for (; prefix < _buffer.length && prefix < 5; prefix++) {
         final b = _buffer[prefix];
         size |= (b & 127) << (7 * prefix);
-        if ((b & 128) == 0) { prefix++; complete = true; break; }
+        if ((b & 128) == 0) {
+          prefix++;
+          complete = true;
+          break;
+        }
       }
       if (!complete) {
         if (prefix == 5) throw const FormatException('Invalid frame length');

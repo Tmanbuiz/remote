@@ -27,7 +27,11 @@ abstract class VidaaTransport {
 }
 
 typedef VidaaConnector = Future<VidaaTransport> Function(
-    String host, int port, VidaaCredentials credentials, String? fingerprint);
+  String host,
+  int port,
+  VidaaCredentials credentials,
+  String? fingerprint,
+);
 
 class MqttVidaaTransport implements VidaaTransport {
   MqttVidaaTransport._(this._client, this.fingerprint);
@@ -35,55 +39,80 @@ class MqttVidaaTransport implements VidaaTransport {
   @override
   final String fingerprint;
   @override
-  bool get isConnected => _client.connectionStatus?.state == MqttConnectionState.connected;
+  bool get isConnected =>
+      _client.connectionStatus?.state == MqttConnectionState.connected;
   @override
-  Stream<VidaaMessage> get messages => _client.updates!.expand((batch) => batch.map((event) {
-    final message = event.payload as MqttPublishMessage;
-    return VidaaMessage(event.topic,
-      MqttPublishPayload.bytesToStringAsString(message.payload.message),
-      retained: message.header?.retain ?? false);
-  }));
+  Stream<VidaaMessage> get messages => _client.updates!.expand(
+    (batch) => batch.map((event) {
+      final message = event.payload as MqttPublishMessage;
+      return VidaaMessage(
+        event.topic,
+        MqttPublishPayload.bytesToStringAsString(message.payload.message),
+        retained: message.header?.retain ?? false,
+      );
+    }),
+  );
 
-  static Future<VidaaTransport> connect(String host, int port,
-      VidaaCredentials credentials, String? fingerprint) async {
+  static Future<VidaaTransport> connect(
+    String host,
+    int port,
+    VidaaCredentials credentials,
+    String? fingerprint,
+  ) async {
     final certificate = await rootBundle.loadString('assets/vidaa/client.pem');
     final key = await rootBundle.loadString('assets/vidaa/client.key');
     final context = SecurityContext(withTrustedRoots: false)
       ..useCertificateChainBytes(utf8.encode(certificate))
       ..usePrivateKeyBytes(utf8.encode(key));
     String? observed;
-    final client = MqttServerClient.withPort(host, credentials.clientId, port)
+    final client = MqttServerClient.withPort(
+      host,
+      credentials.clientId,
+      port,
+      maxConnectionAttempts: 1,
+    )
       ..secure = true
       ..securityContext = context
       ..setProtocolV311()
       ..keepAlivePeriod = 20
       ..connectTimeoutPeriod = 8000
-      ..maxConnectionAttempts = 1
       ..autoReconnect = false
       ..logging(on: false)
       ..onBadCertificate = (cert) {
         observed = certificateFingerprint(cert.pem);
         return fingerprint == null || fingerprint == observed;
       }
-      ..connectionMessage = MqttConnectMessage().withClientIdentifier(credentials.clientId).startClean();
+      ..connectionMessage = MqttConnectMessage()
+          .withClientIdentifier(credentials.clientId)
+          .startClean();
     try {
       await client.connect(credentials.username, credentials.password);
-      if (client.connectionStatus?.state != MqttConnectionState.connected || observed == null) {
-        throw RemoteAuthException('VIDAA rejected the connection or its certificate could not be verified.');
+      if (client.connectionStatus?.state != MqttConnectionState.connected ||
+          observed == null) {
+        throw RemoteAuthException(
+          'VIDAA rejected the connection or its certificate could not be verified.',
+        );
       }
-      final topics = [VidaaWire.responses(credentials.clientId),
+      final topics = [
+        VidaaWire.responses(credentials.clientId),
         '/remoteapp/mobile/broadcast/ui_service/state',
-        '/remoteapp/mobile/broadcast/ui_service/volume'];
+        '/remoteapp/mobile/broadcast/ui_service/volume',
+      ];
       final waiting = topics.toSet();
       final subscribed = Completer<void>();
       client.onSubscribed = (topic) {
         waiting.remove(topic);
         if (waiting.isEmpty && !subscribed.isCompleted) subscribed.complete();
       };
-      for (final topic in topics) { client.subscribe(topic, MqttQos.atMostOnce); }
+      for (final topic in topics) {
+        client.subscribe(topic, MqttQos.atMostOnce);
+      }
       await subscribed.future.timeout(const Duration(seconds: 8));
       return MqttVidaaTransport._(client, observed!);
-    } catch (_) { client.disconnect(); rethrow; }
+    } catch (_) {
+      client.disconnect();
+      rethrow;
+    }
   }
 
   @override
@@ -91,15 +120,23 @@ class MqttVidaaTransport implements VidaaTransport {
     if (!isConnected) throw RemoteTransportException('VIDAA disconnected.');
     final builder = MqttClientPayloadBuilder()..addUTF8String(payload);
     // Commands are never retained or queued across reconnects.
-    _client.publishMessage(topic, MqttQos.atMostOnce, builder.payload!, retain: false);
+    _client.publishMessage(
+      topic,
+      MqttQos.atMostOnce,
+      builder.payload!,
+      retain: false,
+    );
   }
+
   @override
-  Future<void> close() async { _client.disconnect(); }
+  Future<void> close() async {
+    _client.disconnect();
+  }
 }
 
 class VidaaSession {
   VidaaSession(this._store, this.deviceId, {VidaaConnector? connector})
-      : _connector = connector ?? MqttVidaaTransport.connect;
+    : _connector = connector ?? MqttVidaaTransport.connect;
   final CredentialStore _store;
   final String deviceId;
   final VidaaConnector _connector;
@@ -117,23 +154,41 @@ class VidaaSession {
   bool get isReady => _authenticated && (_transport?.isConnected ?? false);
 
   Future<String> _uuid() async {
-    final record = await readOrCreateCredential(_store, 'vidaa:identity', () async {
-      final random = Random.secure();
-      final bytes = List.generate(6, (_) => random.nextInt(256));
-      bytes[0] = (bytes[0] | 2) & 254;
-      return {'uuid': bytes.map((v) => v.toRadixString(16).padLeft(2, '0')).join(':')};
-    });
+    final record = await readOrCreateCredential(
+      _store,
+      'vidaa:identity',
+      () async {
+        final random = Random.secure();
+        final bytes = List.generate(6, (_) => random.nextInt(256));
+        bytes[0] = (bytes[0] | 2) & 254;
+        return {
+          'uuid': bytes
+              .map((v) => v.toRadixString(16).padLeft(2, '0'))
+              .join(':'),
+        };
+      },
+    );
     return record['uuid'] as String;
   }
 
-  Future<void> _open(String host, int port, VidaaCredentials credentials,
-      String? fingerprint) async {
-    await close(); _credentials = credentials;
+  Future<void> _open(
+    String host,
+    int port,
+    VidaaCredentials credentials,
+    String? fingerprint,
+  ) async {
+    await close();
+    _credentials = credentials;
     _transport = await _connector(host, port, credentials, fingerprint);
-    _subscription = _transport!.messages.listen(_receive,
-      onError: (Object error) { _fail(error); }, onDone: () {
+    _subscription = _transport!.messages.listen(
+      _receive,
+      onError: (Object error) {
+        _fail(error);
+      },
+      onDone: () {
         _fail(RemoteTransportException('VIDAA disconnected.'));
-      });
+      },
+    );
   }
 
   Future<void> beginPairing(String host, int port, int? protocolVersion) async {
@@ -144,32 +199,52 @@ class VidaaSession {
     for (final method in methods) {
       try {
         profile = method;
-        final credentials = VidaaWire.credentials(uuid, method, DateTime.now().millisecondsSinceEpoch ~/ 1000);
+        final credentials = VidaaWire.credentials(
+          uuid,
+          method,
+          DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        );
         await _open(host, port, credentials, null);
         break;
       } catch (_) {
         await close();
         if (method == methods.last) {
-          throw RemoteAuthException('This VIDAA firmware rejected the mobile connection. Check Support → Mobile App on the TV.');
+          throw RemoteAuthException(
+            'This VIDAA firmware rejected the mobile connection. Check Support → Mobile App on the TV.',
+          );
         }
       }
     }
-    _prompt = Completer<void>(); _prompt!.future.ignore();
-    await _publish('ui_service', 'vidaa_app_connect', jsonEncode({
-      'app_version': 2, 'connect_result': 0, 'device_type': 'Mobile App',
-    }));
+    _prompt = Completer<void>();
+    _prompt!.future.ignore();
+    await _publish(
+      'ui_service',
+      'vidaa_app_connect',
+      jsonEncode({
+        'app_version': 2,
+        'connect_result': 0,
+        'device_type': 'Mobile App',
+      }),
+    );
     await _prompt!.future.timeout(const Duration(seconds: 12));
   }
 
   Future<void> finishPairing(String pin) async {
     final payload = VidaaWire.pinPayload(pin);
-    _auth = Completer<bool>(); _auth!.future.ignore();
-    _tokens = Completer<Map<String, dynamic>>(); _tokens!.future.ignore();
+    _auth = Completer<bool>();
+    _auth!.future.ignore();
+    _tokens = Completer<Map<String, dynamic>>();
+    _tokens!.future.ignore();
     await _publish('ui_service', 'authenticationcode', payload);
     if (!await _auth!.future.timeout(const Duration(seconds: 12))) {
-      throw RemoteAuthException('The TV rejected that PIN. Use the code on its screen.');
+      throw RemoteAuthException(
+        'The TV rejected that PIN. Use the code on its screen.',
+      );
     }
-    await _transport!.publish(VidaaWire.tokenRequest(_credentials!.clientId), '{"refreshtoken":""}');
+    await _transport!.publish(
+      VidaaWire.tokenRequest(_credentials!.clientId),
+      '{"refreshtoken":""}',
+    );
     Map<String, dynamic> tokens;
     try {
       tokens = await _tokens!.future.timeout(const Duration(seconds: 8));
@@ -177,11 +252,14 @@ class VidaaSession {
       if (profile == VidaaProfile.modern) rethrow;
       // Older firmware can authorize the UUID without issuing access tokens.
       // Verify a fresh state response before declaring the remote ready.
-      await _verifyState(); tokens = {};
+      await _verifyState();
+      tokens = {};
     }
     await _store.write(_key, {
-      ...tokens, 'clientId': _credentials!.clientId,
-      'username': _credentials!.username, 'profile': profile.name,
+      ...tokens,
+      'clientId': _credentials!.clientId,
+      'username': _credentials!.username,
+      'profile': profile.name,
       'fingerprint': _transport!.fingerprint,
     });
     _authenticated = true;
@@ -192,39 +270,53 @@ class VidaaSession {
   Future<void> connect(String host, int port) async {
     final record = await _store.read(_key);
     if (record == null || record['fingerprint'] is! String) {
-      throw RemoteAuthException('Pair this VIDAA TV again from its device menu.');
+      throw RemoteAuthException(
+        'Pair this VIDAA TV again from its device menu.',
+      );
     }
     profile = VidaaProfile.values.byName(record['profile'] as String);
     final now = DateTime.now().millisecondsSinceEpoch;
     final accessExpired = (record['accessExpiresAt'] as int? ?? 0) <= now;
     final refresh = accessExpired && record['refreshToken'] is String;
     if (accessExpired && record['accessToken'] is String && !refresh) {
-      throw RemoteAuthException('TV authorization expired. Pair this TV again.');
+      throw RemoteAuthException(
+        'TV authorization expired. Pair this TV again.',
+      );
     }
     if (refresh && (record['refreshExpiresAt'] as int? ?? 0) <= now) {
       throw RemoteAuthException('TV pairing expired. Pair this TV again.');
     }
     VidaaCredentials credentials;
     if (record['accessToken'] is String) {
-      credentials = VidaaCredentials(record['clientId'] as String, record['username'] as String,
-        (refresh ? record['refreshToken'] : record['accessToken']) as String);
+      credentials = VidaaCredentials(
+        record['clientId'] as String,
+        record['username'] as String,
+        (refresh ? record['refreshToken'] : record['accessToken']) as String,
+      );
     } else {
       credentials = VidaaWire.credentials(await _uuid(), profile, now ~/ 1000);
     }
     await _open(host, port, credentials, record['fingerprint'] as String);
     if (refresh) {
-      _tokens = Completer<Map<String, dynamic>>(); _tokens!.future.ignore();
-      await _transport!.publish(VidaaWire.tokenRequest(credentials.clientId),
-        jsonEncode({'refreshtoken': record['refreshToken']}));
-      final renewed = await _tokens!.future.timeout(const Duration(seconds: 10));
+      _tokens = Completer<Map<String, dynamic>>();
+      _tokens!.future.ignore();
+      await _transport!.publish(
+        VidaaWire.tokenRequest(credentials.clientId),
+        jsonEncode({'refreshtoken': record['refreshToken']}),
+      );
+      final renewed = await _tokens!.future.timeout(
+        const Duration(seconds: 10),
+      );
       await _store.write(_key, {...record, ...renewed});
     }
-    await _verifyState(); _authenticated = true;
+    await _verifyState();
+    _authenticated = true;
     await _publish('platform_service', 'gettvinfo', '');
   }
 
   Future<void> _verifyState() async {
-    _state = Completer<void>(); _state!.future.ignore();
+    _state = Completer<void>();
+    _state!.future.ignore();
     await _publish('platform_service', 'getvolume', '');
     await _state!.future.timeout(const Duration(seconds: 8));
   }
@@ -233,33 +325,59 @@ class VidaaSession {
     if (message.retained || message.payload.length > 65536) return;
     try {
       Object? payload;
-      try { payload = jsonDecode(message.payload); } catch (_) { payload = null; }
+      try {
+        payload = jsonDecode(message.payload);
+      } catch (_) {
+        payload = null;
+      }
       if (payload is String) {
-        try { payload = jsonDecode(payload); } catch (_) { payload = null; }
+        try {
+          payload = jsonDecode(payload);
+        } catch (_) {
+          payload = null;
+        }
       }
       final base = '/remoteapp/mobile/${_credentials!.clientId}/';
       if (message.topic.startsWith(base)) {
         if (message.topic.endsWith('/authentication')) {
           if (!(_prompt?.isCompleted ?? true)) _prompt!.complete();
         } else if (message.topic.endsWith('/authenticationcode')) {
-          if (!(_auth?.isCompleted ?? true)) _auth!.complete(VidaaWire.pinAccepted(payload));
+          if (!(_auth?.isCompleted ?? true)) {
+            _auth!.complete(VidaaWire.pinAccepted(payload));
+          }
         } else if (message.topic.endsWith('/tokenissuance')) {
           final value = VidaaWire.tokens(payload, DateTime.now());
-          if (value != null && !(_tokens?.isCompleted ?? true)) _tokens!.complete(value);
-        } else if (message.topic.endsWith('/gettvinfo') || message.topic.endsWith('/getdeviceinfo')) {
+          if (value != null && !(_tokens?.isCompleted ?? true)) {
+            _tokens!.complete(value);
+          }
+        } else if (message.topic.endsWith('/gettvinfo') ||
+            message.topic.endsWith('/getdeviceinfo')) {
           if (payload is Map) {
-            for (final key in ['software_version', 'softwareVersion', 'firmware_version', 'firmwareVersion']) {
-              if (payload[key] is String) { firmware = payload[key] as String; break; }
+            for (final key in [
+              'software_version',
+              'softwareVersion',
+              'firmware_version',
+              'firmwareVersion',
+            ]) {
+              if (payload[key] is String) {
+                firmware = payload[key] as String;
+                break;
+              }
             }
           }
         }
       }
-      if ((message.topic.startsWith(base) || message.topic.startsWith('/remoteapp/mobile/broadcast/')) &&
-          message.topic.endsWith('/volume') && payload is Map &&
-          (payload.containsKey('volume_value') || payload.containsKey('volume'))) {
+      if ((message.topic.startsWith(base) ||
+              message.topic.startsWith('/remoteapp/mobile/broadcast/')) &&
+          message.topic.endsWith('/volume') &&
+          payload is Map &&
+          (payload.containsKey('volume_value') ||
+              payload.containsKey('volume'))) {
         if (!(_state?.isCompleted ?? true)) _state!.complete();
       }
-    } catch (error) { _fail(error); }
+    } catch (error) {
+      _fail(error);
+    }
   }
 
   void _fail(Object error) {
@@ -270,17 +388,28 @@ class VidaaSession {
     if (_auth != null && !_auth!.isCompleted) _auth!.completeError(error);
     if (_tokens != null && !_tokens!.isCompleted) _tokens!.completeError(error);
   }
+
   Future<void> _publish(String service, String action, String payload) =>
-      _transport!.publish(VidaaWire.action(_credentials!.clientId, service, action), payload);
+      _transport!.publish(
+        VidaaWire.action(_credentials!.clientId, service, action),
+        payload,
+      );
   Future<void> sendKey(String key) async {
-    if (!isReady) throw RemoteAuthException('Pair and connect to the TV before controlling it.');
+    if (!isReady) {
+      throw RemoteAuthException(
+        'Pair and connect to the TV before controlling it.',
+      );
+    }
     await _publish('remote_service', 'sendkey', key);
   }
+
   Future<void> close() async {
     _fail(RemoteTransportException('Session closed.'));
     _authenticated = false;
-    await _subscription?.cancel(); _subscription = null;
-    final old = _transport; _transport = null;
+    await _subscription?.cancel();
+    _subscription = null;
+    final old = _transport;
+    _transport = null;
     if (old != null) await old.close();
   }
 }

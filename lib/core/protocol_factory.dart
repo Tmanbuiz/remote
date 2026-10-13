@@ -28,9 +28,7 @@ class ProtocolFactory {
       case TvBrand.vizio:
       case TvBrand.appleTv:
       case TvBrand.unknown:
-        throw UnimplementedError(
-          '${device.brand.label} is not supported yet',
-        );
+        throw UnimplementedError('${device.brand.label} is not supported yet');
     }
   }
 
@@ -47,8 +45,9 @@ class ProtocolFactory {
 
   static Future<void> forgetCredentials(TvDevice device) async {
     const store = SecureCredentialStore();
-    if (device.brand == TvBrand.androidTv) await store.delete('android-tv:${device.id}');
+    if (device.brand == TvBrand.androidTv) {
+      await store.delete('android-tv:${device.id}');
+    }
     if (device.brand == TvBrand.vidaa) await store.delete('vidaa:${device.id}');
   }
 }
-

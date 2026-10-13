@@ -5,7 +5,6 @@ import 'dart:typed_data';
 
 import 'package:basic_utils/basic_utils.dart';
 import 'package:crypto/crypto.dart';
-import 'package:pointycastle/export.dart';
 
 import '../storage/credential_store.dart';
 
@@ -19,9 +18,15 @@ class ClientIdentity {
     ..usePrivateKeyBytes(utf8.encode(privateKey));
 
   static Future<ClientIdentity> load(CredentialStore store) async {
-    final saved = await readOrCreateCredential(store, 'android-tv:identity',
-        () => Isolate.run(_generate));
-    return ClientIdentity(saved['certificate'] as String, saved['privateKey'] as String);
+    final saved = await readOrCreateCredential(
+      store,
+      'android-tv:identity',
+      () => Isolate.run(_generate),
+    );
+    return ClientIdentity(
+      saved['certificate'] as String,
+      saved['privateKey'] as String,
+    );
   }
 
   static Map<String, dynamic> _generate() {
@@ -29,17 +34,26 @@ class ClientIdentity {
     final private = pair.privateKey as RSAPrivateKey;
     final public = pair.publicKey as RSAPublicKey;
     final csr = X509Utils.generateRsaCsrPem(
-      {'CN': 'WianTribe Remote'}, private, public);
+      {'CN': 'WianTribe Remote'},
+      private,
+      public,
+    );
     return {
-      'certificate': X509Utils.generateSelfSignedCertificate(private, csr, 3650),
+      'certificate': X509Utils.generateSelfSignedCertificate(
+        private,
+        csr,
+        3650,
+      ),
       'privateKey': CryptoUtils.encodeRSAPrivateKeyToPem(private),
     };
   }
 }
 
-Uint8List certificateDer(String pem) => base64Decode(pem
-    .replaceAll(RegExp(r'-----[^-]+-----'), '').replaceAll(RegExp(r'\s'), ''));
-String certificateFingerprint(String pem) => sha256.convert(certificateDer(pem)).toString();
+Uint8List certificateDer(String pem) => base64Decode(
+  pem.replaceAll(RegExp(r'-----[^-]+-----'), '').replaceAll(RegExp(r'\s'), ''),
+);
+String certificateFingerprint(String pem) =>
+    sha256.convert(certificateDer(pem)).toString();
 
 /// Extract the RSA SubjectPublicKeyInfo without accepting arbitrary ASN.1 trees.
 /// Android's pairing secret binds both certificates to the displayed code.
@@ -48,7 +62,9 @@ String certificateFingerprint(String pem) => sha256.convert(certificateDer(pem))
   if (cert.isEmpty) throw const FormatException('Invalid certificate');
   final tbs = _Der.children(cert.first.content);
   final index = tbs.first.tag == 0xa0 ? 6 : 5;
-  if (tbs.length <= index) throw const FormatException('No certificate public key');
+  if (tbs.length <= index) {
+    throw const FormatException('No certificate public key');
+  }
   final spki = _Der.children(tbs[index].content);
   if (spki.length != 2 || spki[1].tag != 3 || spki[1].content.first != 0) {
     throw const FormatException('Unsupported certificate public key');
@@ -58,7 +74,9 @@ String certificateFingerprint(String pem) => sha256.convert(certificateDer(pem))
     throw const FormatException('Android TV requires an RSA certificate');
   }
   BigInt integer(List<int> bytes) => BigInt.parse(
-      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(), radix: 16);
+    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
+    radix: 16,
+  );
   return (modulus: integer(rsa[0].content), exponent: integer(rsa[1].content));
 }
 
@@ -79,7 +97,8 @@ class _Der {
     var pos = 0;
     while (pos < bytes.length) {
       final item = _read(bytes, pos);
-      out.add(item.value); pos = item.next;
+      out.add(item.value);
+      pos = item.next;
     }
     return out;
   }
@@ -94,9 +113,16 @@ class _Der {
         throw const FormatException('Invalid DER length');
       }
       length = 0;
-      for (var i = 0; i < count; i++) { length = (length << 8) | b[p++]; }
+      for (var i = 0; i < count; i++) {
+        length = (length << 8) | b[p++];
+      }
     }
-    if (p + length > b.length) throw const FormatException('Truncated DER value');
-    return (value: _Der(tag, Uint8List.sublistView(b, p, p + length)), next: p + length);
+    if (p + length > b.length) {
+      throw const FormatException('Truncated DER value');
+    }
+    return (
+      value: _Der(tag, Uint8List.sublistView(b, p, p + length)),
+      next: p + length,
+    );
   }
 }
