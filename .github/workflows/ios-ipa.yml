@@ -1,0 +1,85 @@
+name: iOS unsigned IPA
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.6
+          cache: true
+      - name: Show build tools
+        run: |
+          xcodebuild -version
+          flutter --version
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Format source and export dependency resolution
+        env:
+          REMOTE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, json, os, pathlib, subprocess
+          changed = subprocess.check_output(['git', 'diff', '--name-only', os.environ['REMOTE_BASE_SHA']], text=True).splitlines()
+          sources = [p for p in changed if p.endswith('.dart') and pathlib.Path(p).is_file()]
+          if sources:
+              subprocess.run(['dart', 'format', *sources], check=True)
+          paths = subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines()
+          files = {p: pathlib.Path(p).read_text() for p in paths if p.endswith('.dart') or p == 'pubspec.lock'}
+          encoded = base64.b64encode(gzip.compress(json.dumps(files).encode())).decode()
+          print('REMOTE_GENERATED_FILES=' + encoded)
+          PY
+      - name: Analyze
+        run: flutter analyze
+      - name: Test
+        run: flutter test --reporter expanded
+      - name: Build unsigned iPhone app
+        run: flutter build ios --release --no-codesign
+      - name: Package and verify IPA
+        run: |
+          set -euo pipefail
+          REMOTE_APP_DIR="build/ios/iphoneos/Runner.app"
+          test -d "$REMOTE_APP_DIR"
+          xcrun lipo "$REMOTE_APP_DIR/Runner" -verify_arch arm64
+          python3 - <<'PY'
+          import pathlib, plistlib
+          app = pathlib.Path('build/ios/iphoneos/Runner.app')
+          info = plistlib.loads((app / 'Info.plist').read_bytes())
+          assert info['CFBundleIdentifier'] == 'com.wiantribe.universalRemote', info['CFBundleIdentifier']
+          assert info['CFBundleShortVersionString'] == '1.1.0', info['CFBundleShortVersionString']
+          assert info['CFBundleVersion'] == '2', info['CFBundleVersion']
+          assert 'iPhoneOS' in info['CFBundleSupportedPlatforms'], info['CFBundleSupportedPlatforms']
+          assert (app / 'Frameworks' / 'App.framework' / 'App').is_file(), 'Flutter app binary missing'
+          assert (app / 'Frameworks' / 'Flutter.framework' / 'Flutter').is_file(), 'Flutter engine missing'
+          print('Verified device app: version 1.1.0, build 2, arm64')
+          PY
+          mkdir -p build/ios/ipa/Payload
+          ditto "$REMOTE_APP_DIR" build/ios/ipa/Payload/Runner.app
+          cd build/ios/ipa
+          zip -r -q -y UniversalRemote-1.1.0-build2-unsigned.ipa Payload
+          unzip -t -q UniversalRemote-1.1.0-build2-unsigned.ipa
+          shasum -a 256 UniversalRemote-1.1.0-build2-unsigned.ipa > UniversalRemote-1.1.0-build2-unsigned.ipa.sha256
+      - name: Save unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-ios-unsigned-ipa
+          path: |
+            build/ios/ipa/*.ipa
+            build/ios/ipa/*.sha256
+          retention-days: 1
+          if-no-files-found: error

@@ -87,6 +87,8 @@
 		<string>_roku-rcp._tcp</string>
 		<string>_airplay._tcp</string>
 		<string>_googlecast._tcp</string>
+		<string>_androidtvremote2._tcp</string>
+		<string>_androidtvremote._tcp</string>
 	</array>
 	<!-- TV control endpoints are plain HTTP and self-signed HTTPS on the LAN,
 	     so App Transport Security has to allow local networking. This does NOT
@@ -98,3 +100,4 @@
 	</dict>
 </dict>
 </plist>
+

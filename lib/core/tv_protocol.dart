@@ -65,13 +65,17 @@ abstract class TvProtocol {
   /// True once a live session exists. HTTP adapters report true after a
   /// successful reachability probe.
   bool get isConnected;
+  int get pairingCodeLength => 0;
+  bool get pairingCodeIsHex => false;
+  bool get supportsTextInput => true;
 
   Future<PairingResult> pair();
 
   /// Only meaningful after [PairingStatus.pinRequired].
-  Future<PairingResult> submitPin(String pin) async =>
-      const PairingResult(PairingStatus.failed,
-          message: 'This device does not use PIN pairing');
+  Future<PairingResult> submitPin(String pin) async => const PairingResult(
+    PairingStatus.failed,
+    message: 'This device does not use PIN pairing',
+  );
 
   Future<void> connect();
 

@@ -42,3 +42,13 @@ updated date.
 
 ## Contact
 Questions: atoyejet@gmail.com
+
+
+## Additional TV platform pairing
+
+Google TV/Android TV pairing generates a client certificate and private key on
+your phone. VIDAA pairing stores the TV-issued access/refresh tokens. These are
+kept in Android encrypted storage or the iOS Keychain and are used only to
+authenticate to your selected TV. TV model and reported firmware versions may be
+saved locally for compatibility information. Forgetting a TV removes its saved
+platform authorization. No TV pairing credentials are sent to WianTribe servers.

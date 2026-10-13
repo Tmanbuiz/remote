@@ -12,7 +12,8 @@ ship it — see [Building without a Mac](#building-without-a-mac).
 | **LG** (webOS) | SSAP on 3000 + pointer socket | on-screen accept, client-key stored | Working, untested against hardware |
 | Sony Bravia | IRCC-IP, HTTP | PSK or PIN | Not written yet |
 | Vizio | HTTPS on 7345 | PIN shown on TV | Not written yet |
-| Android TV / Google TV | protobuf on 6466/6467 | 6-digit code, TLS client cert | Not written yet |
+| **Android TV / Google TV** | Remote Service v2, TLS/protobuf on 6466/6467 | 6-character hexadecimal TV code | Implemented; tests added; runtime/hardware validation pending |
+| **VIDAA OS** | TV-local MQTT/TLS on 36669 | 4-digit TV PIN; firmware profiles | Implemented; tests added; runtime/hardware validation pending |
 | Apple TV | Companion (SRP + ChaCha20) | PIN | Not written yet — see below |
 
 Discovered sets whose brand has no adapter appear in the list marked
@@ -58,6 +59,15 @@ Apple TV's Companion protocol needs SRP-6a authentication, HKDF key derivation,
 Ed25519 signatures and ChaCha20-Poly1305 encryption, over Apple's OPACK binary
 encoding. There is no shortcut and no Dart library for it. Budget weeks, not
 days — it is a larger job than the other five remaining brands combined.
+
+## Google TV, Android TV and VIDAA setup
+
+These platform adapters are inside this app. **Add TV by address** now has a TV
+platform selector and optional firmware/build field, and pairing accepts the
+code displayed by the TV. Saved TVs provide **TV details** and **Pair again**.
+See [the compatibility and setup guide](docs/TV_PLATFORM_SUPPORT.md) before
+assuming a specific model/firmware works. Android-based firmware must expose
+Android TV Remote Service; VIDAA firmware must accept mobile PIN pairing.
 
 ## Architecture
 
@@ -179,3 +189,4 @@ real hardware, particularly:
 - **Android** — `INTERNET`, `ACCESS_WIFI_STATE` and
   `CHANGE_WIFI_MULTICAST_STATE`, plus a network security config permitting
   cleartext, since Roku's ECP is plain HTTP.
+

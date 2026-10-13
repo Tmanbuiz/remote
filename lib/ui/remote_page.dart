@@ -34,9 +34,9 @@ class RemotePage extends StatelessWidget {
           IconButton(
             tooltip: 'How to use',
             icon: const Icon(Icons.help_outline),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const GuidePage()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => const GuidePage())),
           ),
           const SizedBox(width: 4),
         ],
@@ -59,7 +59,7 @@ class RemotePage extends StatelessWidget {
               const SizedBox(height: 20),
               const _TransportRow(),
               const SizedBox(height: 16),
-              const TextEntryBar(),
+              if (controller.supportsTextInput) const TextEntryBar(),
               const SizedBox(height: 16),
               const _ShortcutBar(),
               const _NumberPad(),
@@ -123,7 +123,12 @@ class _RemoteButton extends StatelessWidget {
                 width: 1,
               ),
               boxShadow: accented
-                  ? [BoxShadow(color: tone!.withValues(alpha: 0.28), blurRadius: 18)]
+                  ? [
+                      BoxShadow(
+                        color: tone!.withValues(alpha: 0.28),
+                        blurRadius: 18,
+                      ),
+                    ]
                   : null,
             ),
             child: Opacity(
@@ -452,9 +457,7 @@ class _ShortcutBar extends StatelessWidget {
                     final ok = await controller.launchChannel(channel.id);
                     if (!ok) {
                       messenger.showSnackBar(
-                        SnackBar(
-                          content: Text('${channel.name} did not open'),
-                        ),
+                        SnackBar(content: Text('${channel.name} did not open')),
                       );
                     }
                   },

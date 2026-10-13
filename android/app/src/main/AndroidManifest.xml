@@ -12,6 +12,7 @@
 
     <application
         android:label="Universal Remote"
+        android:allowBackup="false"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:networkSecurityConfig="@xml/network_security_config">
@@ -58,3 +59,4 @@
         </intent>
     </queries>
 </manifest>
+

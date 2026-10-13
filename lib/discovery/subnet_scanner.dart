@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../core/tv_device.dart';
+import 'platform_discovery.dart';
 
 /// Finds TVs by probing every address on the local /24 directly.
 ///
@@ -65,7 +66,9 @@ class SubnetScanner {
   }
 
   /// Sweeps the /24 the phone sits on. Returns every set that answered.
-  Future<List<TvDevice>> scan({void Function(int done, int total)? onProgress}) async {
+  Future<List<TvDevice>> scan({
+    void Function(int done, int total)? onProgress,
+  }) async {
     final local = await localAddress();
     if (local == null) return const [];
 
@@ -95,7 +98,30 @@ class SubnetScanner {
 
   /// Checks one address for each brand's control port, cheapest first.
   /// Identifies a single host, for an address the user typed in.
-  Future<TvDevice?> probeHost(String host) => _probeHost(host);
+  Future<TvDevice?> probeHost(String host, {TvBrand? platform}) async {
+    final cleaned = PlatformDiscovery.host(host);
+    if (platform == TvBrand.androidTv) {
+      if (await _isPortOpen(cleaned, 6466) ||
+          await _isPortOpen(cleaned, 6467)) {
+        return TvDevice(
+          id: 'android-$cleaned',
+          name: 'Google TV / Android TV ($cleaned)',
+          host: cleaned,
+          brand: TvBrand.androidTv,
+          port: 6466,
+          protocolVersion: 2,
+        );
+      }
+      return null;
+    }
+    if (platform == TvBrand.vidaa) {
+      if (await _isPortOpen(cleaned, 36669)) {
+        return PlatformDiscovery.vidaa(_client, cleaned);
+      }
+      return null;
+    }
+    return _probeHost(cleaned);
+  }
 
   Future<TvDevice?> _probeHost(String host) async {
     // A closed TCP port answers fast, so gate the HTTP probes behind a plain
@@ -118,6 +144,19 @@ class SubnetScanner {
         port: 3000,
       );
     }
+    if (await _isPortOpen(host, 6466) || await _isPortOpen(host, 6467)) {
+      return TvDevice(
+        id: 'android-$host',
+        name: 'Google TV / Android TV ($host)',
+        host: host,
+        brand: TvBrand.androidTv,
+        port: 6466,
+        protocolVersion: 2,
+      );
+    }
+    if (await _isPortOpen(host, 36669)) {
+      return PlatformDiscovery.vidaa(_client, host);
+    }
     return null;
   }
 
@@ -139,11 +178,16 @@ class SubnetScanner {
       if (res.statusCode != 200) return null;
 
       String tag(String name) =>
-          RegExp('<$name>([^<]*)</$name>').firstMatch(res.body)?.group(1)?.trim() ??
+          RegExp('<$name>([^<]*)</$name>')
+              .firstMatch(res.body)
+              ?.group(1)
+              ?.trim() ??
           '';
 
-      final name = [tag('user-device-name'), tag('friendly-device-name')]
-          .firstWhere((s) => s.isNotEmpty, orElse: () => 'Roku ($host)');
+      final name = [
+        tag('user-device-name'),
+        tag('friendly-device-name'),
+      ].firstWhere((s) => s.isNotEmpty, orElse: () => 'Roku ($host)');
 
       return TvDevice(
         id: tag('serial-number').isNotEmpty
@@ -173,7 +217,8 @@ class SubnetScanner {
       final body = res.body;
       final nameMatch = RegExp(r'"name"\s*:\s*"([^"]*)"').firstMatch(body);
       final idMatch = RegExp(r'"id"\s*:\s*"([^"]*)"').firstMatch(body);
-      final modelMatch = RegExp(r'"modelName"\s*:\s*"([^"]*)"').firstMatch(body);
+      final modelMatch = RegExp(r'"modelName"\s*:\s*"([^"]*)"')
+          .firstMatch(body);
 
       return TvDevice(
         id: idMatch != null ? 'samsung-${idMatch.group(1)}' : 'samsung-$host',

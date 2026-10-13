@@ -8,6 +8,7 @@ import '../core/tv_protocol.dart';
 import 'guide_page.dart';
 import 'remote_page.dart';
 import 'theme.dart';
+import 'pairing_code_dialog.dart';
 
 class DeviceListPage extends StatefulWidget {
   const DeviceListPage({super.key});
@@ -35,54 +36,103 @@ class _DeviceListPageState extends State<DeviceListPage> {
   Future<void> _addByAddress() async {
     final controller = context.read<RemoteController>();
     final field = TextEditingController();
+    final firmwareField = TextEditingController();
+    TvBrand? platform;
     final messenger = ScaffoldMessenger.of(context);
 
     final host = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Add TV by address'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              "On the TV: Settings, Network, About. Use the IP address shown "
-              "there, for example 192.168.1.20.",
-              style: TextStyle(color: RemoteTheme.textMuted, fontSize: 13),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Add TV by address'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  "On the TV: Settings, Network, About. Use the IP address shown "
+                  "there, for example 192.168.1.20.",
+                  style: TextStyle(color: RemoteTheme.textMuted, fontSize: 13),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: field,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: '192.168.1.20',
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (value) =>
+                      Navigator.of(dialogContext).pop(value.trim()),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<TvBrand>(
+                  initialValue: platform,
+                  decoration: const InputDecoration(labelText: 'TV platform'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: null,
+                      child: Text('Detect automatically'),
+                    ),
+                    DropdownMenuItem(
+                      value: TvBrand.androidTv,
+                      child: Text('Google TV / Android TV'),
+                    ),
+                    DropdownMenuItem(
+                      value: TvBrand.vidaa,
+                      child: Text('VIDAA OS'),
+                    ),
+                  ],
+                  onChanged: (value) => setDialogState(() => platform = value),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: firmwareField,
+                  decoration: const InputDecoration(
+                    labelText: 'Firmware / build (optional)',
+                    hintText: 'Version shown in the TV About screen',
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: field,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                hintText: '192.168.1.20',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (value) => Navigator.of(dialogContext).pop(value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(field.text.trim()),
+              child: const Text('Add'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(field.text.trim()),
-            child: const Text('Add'),
-          ),
-        ],
       ),
     );
+    final firmware = firmwareField.text;
     field.dispose();
+    firmwareField.dispose();
     if (host == null || host.isEmpty || !mounted) return;
 
-    final found = await controller.probe(host);
+    final found = await controller.probe(
+      host,
+      platform: platform,
+      firmware: firmware,
+    );
     if (!mounted) return;
     if (found == null) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Nothing answered at $host')),
+        SnackBar(
+          content: Text(
+            controller.error ??
+                'No supported TV control service answered at $host.',
+          ),
+        ),
       );
       return;
     }
@@ -122,11 +172,16 @@ class _DeviceListPageState extends State<DeviceListPage> {
             TextField(
               controller: field,
               autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 hintText: '100.95.6.24',
                 helperText: 'Leave empty to receive the audio directly',
-                helperStyle: TextStyle(color: RemoteTheme.textMuted, fontSize: 11),
+                helperStyle: TextStyle(
+                  color: RemoteTheme.textMuted,
+                  fontSize: 11,
+                ),
                 border: OutlineInputBorder(),
               ),
               onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
@@ -168,7 +223,10 @@ class _DeviceListPageState extends State<DeviceListPage> {
             Text(
               'Reported as "${device.name}". Give it a name you would say out '
               'loud — "living room TV", "bedroom TV" — and Siri will match it.',
-              style: const TextStyle(color: RemoteTheme.textMuted, fontSize: 13),
+              style: const TextStyle(
+                color: RemoteTheme.textMuted,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 14),
             TextField(
@@ -178,7 +236,10 @@ class _DeviceListPageState extends State<DeviceListPage> {
               decoration: const InputDecoration(
                 hintText: 'living room TV',
                 helperText: 'Leave empty to restore the original name',
-                helperStyle: TextStyle(color: RemoteTheme.textMuted, fontSize: 11),
+                helperStyle: TextStyle(
+                  color: RemoteTheme.textMuted,
+                  fontSize: 11,
+                ),
                 border: OutlineInputBorder(),
               ),
               onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
@@ -221,16 +282,33 @@ class _DeviceListPageState extends State<DeviceListPage> {
     }
 
     _showPairingDialog(device);
-    final result = await controller.pairAndSave(device);
+    var result = await controller.pairAndSave(device);
     if (!mounted) return;
     Navigator.of(context).pop(); // dismiss the pairing dialog
 
+    if (result.status == PairingStatus.pinRequired) {
+      final verified = await showDialog<PairingResult>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PairingCodeDialog(
+          tvName: device.displayName,
+          length: controller.pairingCodeLength,
+          hex: controller.pairingCodeIsHex,
+          message: result.message,
+          submit: controller.submitPairingPin,
+        ),
+      );
+      if (verified == null) {
+        await controller.cancelPairing();
+        return;
+      }
+      result = verified;
+      if (!mounted) return;
+    }
     if (result.isSuccess) {
       _openRemote();
     } else {
-      messenger.showSnackBar(
-        SnackBar(content: Text(_pairingMessage(result))),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(_pairingMessage(result))));
     }
   }
 
@@ -251,7 +329,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         title: Text('Pairing with ${device.displayName}'),
-        content: const Row(
+        content: Row(
           children: [
             SizedBox(
               width: 24,
@@ -260,7 +338,12 @@ class _DeviceListPageState extends State<DeviceListPage> {
             ),
             SizedBox(width: 16),
             Expanded(
-              child: Text('Look at the TV and accept the permission prompt.'),
+              child: Text(
+                device.brand == TvBrand.androidTv ||
+                        device.brand == TvBrand.vidaa
+                    ? 'Keep the TV on. A pairing code will appear on its screen.'
+                    : 'Look at the TV and accept the permission prompt.',
+              ),
             ),
           ],
         ),
@@ -269,9 +352,8 @@ class _DeviceListPageState extends State<DeviceListPage> {
   }
 
   void _openRemote() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const RemotePage()),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const RemotePage()));
   }
 
   @override
@@ -318,33 +400,39 @@ class _DeviceListPageState extends State<DeviceListPage> {
       ),
       body: SafeArea(
         child: RefreshIndicator(
-        onRefresh: controller.scan,
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 32),
-          children: [
-            if (controller.savedDevices.isNotEmpty) ...[
-              const _SectionHeader('Paired'),
-              ...controller.savedDevices.map(
-                (d) => _DeviceTile(
-                  device: d,
-                  onTap: () => _connect(d),
-                  onForget: () => controller.forget(d),
-                  onRename: () => _rename(d),
+          onRefresh: controller.scan,
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 32),
+            children: [
+              if (controller.savedDevices.isNotEmpty) ...[
+                const _SectionHeader('Paired'),
+                ...controller.savedDevices.map(
+                  (d) => _DeviceTile(
+                    device: d,
+                    onTap: () => _connect(d),
+                    onForget: () => controller.forget(d),
+                    onRename: () => _rename(d),
+                    onPairAgain: () async {
+                      await controller.resetPairing(d);
+                      if (mounted) {
+                        await _connect(d.copyWith(clearPairingToken: true));
+                      }
+                    },
+                  ),
                 ),
-              ),
+              ],
+              const _SectionHeader('Found on this network'),
+              if (controller.discoveredDevices.isEmpty)
+                _EmptyState(
+                  scanning: controller.isScanning,
+                  message: controller.error,
+                )
+              else
+                ...controller.discoveredDevices.map(
+                  (d) => _DeviceTile(device: d, onTap: () => _connect(d)),
+                ),
             ],
-            const _SectionHeader('Found on this network'),
-            if (controller.discoveredDevices.isEmpty)
-              _EmptyState(
-                scanning: controller.isScanning,
-                message: controller.error,
-              )
-            else
-              ...controller.discoveredDevices.map(
-                (d) => _DeviceTile(device: d, onTap: () => _connect(d)),
-              ),
-          ],
-        ),
+          ),
         ),
       ),
     );
@@ -362,9 +450,9 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         label.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              letterSpacing: 1.2,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+          letterSpacing: 1.2,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
@@ -376,12 +464,14 @@ class _DeviceTile extends StatelessWidget {
     required this.onTap,
     this.onForget,
     this.onRename,
+    this.onPairAgain,
   });
 
   final TvDevice device;
   final VoidCallback onTap;
   final VoidCallback? onForget;
   final VoidCallback? onRename;
+  final VoidCallback? onPairAgain;
 
   static const Map<TvBrand, IconData> _icons = {
     TvBrand.roku: Icons.cast,
@@ -390,6 +480,7 @@ class _DeviceTile extends StatelessWidget {
     TvBrand.sony: Icons.tv,
     TvBrand.vizio: Icons.tv,
     TvBrand.androidTv: Icons.android,
+    TvBrand.vidaa: Icons.tv,
     TvBrand.appleTv: Icons.apple,
     TvBrand.unknown: Icons.device_unknown,
   };
@@ -432,8 +523,11 @@ class _DeviceTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(13),
                     color: RemoteTheme.accent.withValues(alpha: 0.12),
                   ),
-                  child: Icon(_icons[device.brand] ?? Icons.tv,
-                      color: RemoteTheme.accent, size: 22),
+                  child: Icon(
+                    _icons[device.brand] ?? Icons.tv,
+                    color: RemoteTheme.accent,
+                    size: 22,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -453,7 +547,9 @@ class _DeviceTile extends StatelessWidget {
                       Text(
                         subtitle,
                         style: const TextStyle(
-                            color: RemoteTheme.textMuted, fontSize: 12.5),
+                          color: RemoteTheme.textMuted,
+                          fontSize: 12.5,
+                        ),
                       ),
                     ],
                   ),
@@ -461,24 +557,61 @@ class _DeviceTile extends StatelessWidget {
                 if (!supported)
                   const Padding(
                     padding: EdgeInsets.only(right: 8),
-                    child: Text('Not yet supported',
-                        style: TextStyle(color: RemoteTheme.textMuted, fontSize: 11)),
+                    child: Text(
+                      'Not yet supported',
+                      style: TextStyle(
+                        color: RemoteTheme.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
                   )
                 else if (onForget == null)
                   const Icon(Icons.chevron_right, color: RemoteTheme.textMuted)
                 else
                   PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, color: RemoteTheme.textMuted),
+                    icon: const Icon(
+                      Icons.more_vert,
+                      color: RemoteTheme.textMuted,
+                    ),
                     onSelected: (value) {
                       if (value == 'rename') {
                         onRename?.call();
+                      } else if (value == 'pair') {
+                        onPairAgain?.call();
+                      } else if (value == 'details') {
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => AlertDialog(
+                            title: Text(device.displayName),
+                            content: SelectableText(
+                              '${device.brand.label}\nAddress: ${device.host}\nModel: ${device.model ?? 'Not reported'}\nFirmware/build: ${device.firmwareVersion ?? 'Not reported'}\nRemote Service: ${device.serviceVersion ?? 'Not reported'}\nControl protocol: ${device.protocolVersion ?? 'Automatic'}',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                ).pop(),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        );
                       } else {
                         onForget!();
                       }
                     },
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'rename', child: Text('Rename')),
-                      PopupMenuItem(value: 'forget', child: Text('Forget this TV')),
+                      PopupMenuItem(
+                        value: 'details',
+                        child: Text('TV details'),
+                      ),
+                      PopupMenuItem(value: 'pair', child: Text('Pair again')),
+                      PopupMenuItem(
+                        value: 'forget',
+                        child: Text('Forget this TV'),
+                      ),
                     ],
                   ),
               ],

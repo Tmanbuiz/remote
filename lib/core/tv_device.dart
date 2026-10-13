@@ -1,4 +1,3 @@
-
 /// Which wire protocol a discovered set speaks. One brand can only ever map to
 /// one of these; the value is what selects the adapter.
 enum TvBrand {
@@ -7,7 +6,8 @@ enum TvBrand {
   lg('LG'),
   sony('Sony'),
   vizio('Vizio'),
-  androidTv('Android TV'),
+  androidTv('Google TV / Android TV'),
+  vidaa('VIDAA OS'),
   appleTv('Apple TV'),
   unknown('Unknown');
 
@@ -31,10 +31,14 @@ class TvDevice {
     this.model,
     this.macAddress,
     this.pairingToken,
+    this.firmwareVersion,
+    this.serviceVersion,
+    this.protocolVersion,
   });
 
   /// Stable across rediscovery — usually the UPnP USN or the set's serial.
   final String id;
+
   /// The name the set reports, such as `70" Hisense Roku TV`.
   final String name;
 
@@ -58,10 +62,14 @@ class TvDevice {
   final String? macAddress;
 
   final String? pairingToken;
+  final String? firmwareVersion;
+  final String? serviceVersion;
+  final int? protocolVersion;
 
   /// What the interface shows, and what Siri matches a spoken name against.
-  String get displayName =>
-      (nickname != null && nickname!.trim().isNotEmpty) ? nickname!.trim() : name;
+  String get displayName => (nickname != null && nickname!.trim().isNotEmpty)
+      ? nickname!.trim()
+      : name;
 
   bool get isPaired => pairingToken != null && pairingToken!.isNotEmpty;
 
@@ -76,6 +84,10 @@ class TvDevice {
     String? model,
     String? macAddress,
     String? pairingToken,
+    bool clearPairingToken = false,
+    String? firmwareVersion,
+    String? serviceVersion,
+    int? protocolVersion,
   }) {
     return TvDevice(
       id: id,
@@ -86,36 +98,47 @@ class TvDevice {
       port: port ?? this.port,
       model: model ?? this.model,
       macAddress: macAddress ?? this.macAddress,
-      pairingToken: pairingToken ?? this.pairingToken,
+      pairingToken: clearPairingToken
+          ? null
+          : (pairingToken ?? this.pairingToken),
+      firmwareVersion: firmwareVersion ?? this.firmwareVersion,
+      serviceVersion: serviceVersion ?? this.serviceVersion,
+      protocolVersion: protocolVersion ?? this.protocolVersion,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'nickname': nickname,
-        'host': host,
-        'brand': brand.name,
-        'port': port,
-        'model': model,
-        'macAddress': macAddress,
-        'pairingToken': pairingToken,
-      };
+    'id': id,
+    'name': name,
+    'nickname': nickname,
+    'host': host,
+    'brand': brand.name,
+    'port': port,
+    'model': model,
+    'macAddress': macAddress,
+    'pairingToken': pairingToken,
+    'firmwareVersion': firmwareVersion,
+    'serviceVersion': serviceVersion,
+    'protocolVersion': protocolVersion,
+  };
 
   factory TvDevice.fromJson(Map<String, dynamic> json) => TvDevice(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        nickname: json['nickname'] as String?,
-        host: json['host'] as String,
-        brand: TvBrand.values.firstWhere(
-          (b) => b.name == json['brand'],
-          orElse: () => TvBrand.unknown,
-        ),
-        port: json['port'] as int?,
-        model: json['model'] as String?,
-        macAddress: json['macAddress'] as String?,
-        pairingToken: json['pairingToken'] as String?,
-      );
+    id: json['id'] as String,
+    name: json['name'] as String,
+    nickname: json['nickname'] as String?,
+    host: json['host'] as String,
+    brand: TvBrand.values.firstWhere(
+      (b) => b.name == json['brand'],
+      orElse: () => TvBrand.unknown,
+    ),
+    port: json['port'] as int?,
+    model: json['model'] as String?,
+    macAddress: json['macAddress'] as String?,
+    pairingToken: json['pairingToken'] as String?,
+    firmwareVersion: json['firmwareVersion'] as String?,
+    serviceVersion: json['serviceVersion'] as String?,
+    protocolVersion: json['protocolVersion'] as int?,
+  );
 
   @override
   bool operator ==(Object other) => other is TvDevice && other.id == id;
