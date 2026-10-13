@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../core/tv_device.dart';
+import 'subnet_scanner.dart';
 
 /// A raw SSDP reply, before we decide what kind of set sent it.
 class SsdpResponse {
@@ -150,6 +151,13 @@ class SsdpDiscovery {
     }
 
     final haystack = '$server $descriptionMaker';
+    if (haystack.contains('hisense') || haystack.contains('vidaa') || haystack.contains('toshiba')) {
+      // Hisense is a manufacturer, not a platform. Prefer Roku/Android control
+      // services before falling back to a VIDAA descriptor.
+      final roku = await _probeRoku(host, usn);
+      if (roku != null) return roku;
+      return SubnetScanner(client: _client).probeHost(host);
+    }
 
     if (haystack.contains('samsung')) {
       return _probeSamsung(host, usn, descriptionName);
@@ -269,3 +277,4 @@ class SsdpDiscovery {
     }
   }
 }
+

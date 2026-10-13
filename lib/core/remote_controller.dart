@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../discovery/ssdp_discovery.dart';
+import '../discovery/platform_discovery.dart';
 import '../protocols/audio_relay.dart';
 import '../protocols/roku_ecp2_session.dart';
 import '../protocols/roku_protocol.dart';
@@ -25,9 +26,13 @@ enum RemoteConnectionState { idle, connecting, connected, failed }
 /// before it is reported as an error. Without that, the app feels broken every
 /// time it comes back from the background.
 class RemoteController extends ChangeNotifier {
-  RemoteController(this._store);
+  RemoteController(this._store, {TvProtocol Function(TvDevice)? protocolBuilder})
+      : _createProtocol = protocolBuilder ?? ProtocolFactory.create;
 
   final DeviceStore _store;
+  final TvProtocol Function(TvDevice) _createProtocol;
+  TvProtocol? _pendingPairing;
+  int _sessionEpoch = 0;
   final SsdpDiscovery _discovery = SsdpDiscovery();
   final SubnetScanner _scanner = SubnetScanner();
 
@@ -53,6 +58,10 @@ class RemoteController extends ChangeNotifier {
   /// ECP-2 exposes this today, so the shortcut row hides itself elsewhere.
   bool get supportsChannels => _active is RokuProtocol;
 
+  bool get supportsTextInput => _active?.supportsTextInput ?? false;
+  int get pairingCodeLength => _pendingPairing?.pairingCodeLength ?? 0;
+  bool get pairingCodeIsHex => _pendingPairing?.pairingCodeIsHex ?? false;
+
   void loadSaved() {
     _saved = _store.loadAll();
     _relayHost = _store.loadRelayHost();
@@ -75,13 +84,18 @@ class RemoteController extends ChangeNotifier {
       final results = await Future.wait([
         _discovery.discover().catchError((_) => <TvDevice>[]),
         _scanner.scan().catchError((_) => <TvDevice>[]),
+        PlatformDiscovery.mdns().catchError((_) => <TvDevice>[]),
       ]);
 
       // Keyed by host: one address is one TV, and the two paths often report
       // the same set under different ids.
       final byHost = <String, TvDevice>{};
       for (final device in results.expand((list) => list)) {
-        byHost.putIfAbsent(device.host, () => device);
+        final existing = byHost[device.host];
+        if (existing == null || (!ProtocolFactory.supported.contains(existing.brand) &&
+            ProtocolFactory.supported.contains(device.brand))) {
+          byHost[device.host] = device;
+        }
       }
 
       final savedHosts = _saved.map((d) => d.host).toSet();
@@ -117,70 +131,119 @@ class RemoteController extends ChangeNotifier {
   /// Discovery cannot reach every network — client isolation, separate VLANs,
   /// and iOS without the multicast entitlement all hide TVs that are otherwise
   /// perfectly reachable. A typed address bypasses discovery entirely.
-  Future<TvDevice?> probe(String host) async {
+  Future<TvDevice?> probe(String host, {TvBrand? platform, String? firmware}) async {
     final cleaned = host.trim();
     if (cleaned.isEmpty) return null;
     try {
-      final found = await _scanner.probeHost(cleaned);
-      if (found == null) return null;
+      var found = await _scanner.probeHost(cleaned, platform: platform);
+      if (found != null && firmware != null && firmware.trim().isNotEmpty) {
+        found = found.copyWith(firmwareVersion: firmware.trim());
+      }
+      if (found == null) {
+        _error = 'No supported TV control service answered. Check that the TV is on, the address is current and mobile control is enabled.';
+        return null;
+      }
+      final identified = found;
       // Prefer the saved record if this TV is already known, so a typed
       // address does not create a second entry without its pairing token.
       return _saved.firstWhere(
-        (d) => d.host == found.host,
-        orElse: () => found,
+        (d) => d.host == identified.host && d.brand == identified.brand,
+        orElse: () => identified,
       );
+    } on FormatException catch (e) {
+      _error = e.message.toString(); return null;
     } catch (_) {
-      return null;
+      _error = 'The TV could not be reached on this network.'; return null;
     }
   }
 
   Future<PairingResult> pairAndSave(TvDevice device) async {
     if (!ProtocolFactory.supported.contains(device.brand)) {
-      return PairingResult(
-        PairingStatus.failed,
-        message: '${device.brand.label} is not supported yet',
-      );
+      return PairingResult(PairingStatus.failed,
+          message: '${device.brand.label} is not supported yet');
     }
-
-    _state = RemoteConnectionState.connecting;
-    _error = null;
+    final epoch = ++_sessionEpoch;
+    await _pendingPairing?.disconnect(); _pendingPairing = null;
+    await _active?.disconnect(); _active = null;
+    _state = RemoteConnectionState.connecting; _error = null;
     notifyListeners();
-
-    final protocol = ProtocolFactory.create(device);
+    final protocol = _createProtocol(device);
+    _pendingPairing = protocol;
     PairingResult result;
-    try {
-      result = await protocol.pair();
-    } catch (e) {
-      result = PairingResult(PairingStatus.failed, message: '$e');
-    }
-
-    if (result.isSuccess) {
-      final paired = result.device ?? protocol.device;
-      await _store.save(paired);
-      await _store.setLastUsed(paired.id);
-      _saved = _store.loadAll();
-      _discovered = _discovered.where((d) => d.id != paired.id).toList();
-      _active = protocol;
-      _state = RemoteConnectionState.connected;
-    } else {
-      _state = RemoteConnectionState.failed;
-      _error = result.message;
+    try { result = await protocol.pair(); }
+    catch (_) { result = const PairingResult(PairingStatus.failed,
+        message: 'The TV did not finish pairing. Start pairing again.'); }
+    if (epoch != _sessionEpoch) {
       await protocol.disconnect();
+      return const PairingResult(PairingStatus.failed, message: 'Pairing cancelled.');
     }
+    return _finishPairingResult(protocol, result);
+  }
+
+  Future<PairingResult> submitPairingPin(String pin) async {
+    final protocol = _pendingPairing;
+    if (protocol == null) return const PairingResult(PairingStatus.failed,
+        message: 'Start pairing again.');
+    final epoch = _sessionEpoch;
+    PairingResult result;
+    try { result = await protocol.submitPin(pin); }
+    catch (_) { result = const PairingResult(PairingStatus.failed,
+        message: 'The TV did not finish pairing. Start pairing again.'); }
+    if (epoch != _sessionEpoch) {
+      await protocol.disconnect();
+      return const PairingResult(PairingStatus.failed, message: 'Pairing cancelled.');
+    }
+    return _finishPairingResult(protocol, result);
+  }
+
+  Future<PairingResult> _finishPairingResult(TvProtocol protocol, PairingResult result) async {
+    if (result.status == PairingStatus.pinRequired) {
+      // Keep this exact socket alive: creating a new adapter loses the challenge.
+      _state = RemoteConnectionState.connecting; _error = result.message;
+    } else if (result.isSuccess) {
+      final paired = result.device ?? protocol.device;
+      await _store.save(paired); await _store.setLastUsed(paired.id);
+      _saved = _store.loadAll();
+      _discovered = _discovered.where((d) => d.host != paired.host).toList();
+      _active = protocol; _pendingPairing = null;
+      _state = RemoteConnectionState.connected; _error = null;
+    } else {
+      await protocol.disconnect(); _pendingPairing = null;
+      _state = RemoteConnectionState.failed; _error = result.message;
+    }
+    notifyListeners(); return result;
+  }
+
+  Future<void> cancelPairing() async {
+    ++_sessionEpoch;
+    final pending = _pendingPairing; _pendingPairing = null;
+    await pending?.disconnect();
+    _state = RemoteConnectionState.idle; _error = null;
     notifyListeners();
-    return result;
+  }
+
+  Future<void> resetPairing(TvDevice device) async {
+    await cancelPairing();
+    if (_active?.device.id == device.id) {
+      await _active!.disconnect(); _active = null;
+    }
+    await ProtocolFactory.forgetCredentials(device);
+    await _store.save(device.copyWith(clearPairingToken: true));
+    _saved = _store.loadAll(); notifyListeners();
   }
 
   Future<void> select(TvDevice device) async {
     if (_active?.device.id == device.id && _state == RemoteConnectionState.connected) {
       return;
     }
+    ++_sessionEpoch;
+    await _pendingPairing?.disconnect(); _pendingPairing = null;
     await _active?.disconnect();
     _state = RemoteConnectionState.connecting;
     _error = null;
     notifyListeners();
 
-    final protocol = ProtocolFactory.create(device);
+    final protocol = _createProtocol(device);
     _active = protocol;
     try {
       await protocol.connect();
@@ -446,6 +509,7 @@ class RemoteController extends ChangeNotifier {
       _active = null;
       _state = RemoteConnectionState.idle;
     }
+    await ProtocolFactory.forgetCredentials(device);
     await _store.remove(device.id);
     _saved = _store.loadAll();
     notifyListeners();
@@ -459,8 +523,11 @@ class RemoteController extends ChangeNotifier {
 
   @override
   void dispose() {
+    ++_sessionEpoch;
+    _pendingPairing?.disconnect();
     _relay?.stop();
     _active?.disconnect();
     super.dispose();
   }
 }
+

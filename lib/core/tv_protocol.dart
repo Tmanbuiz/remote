@@ -65,6 +65,9 @@ abstract class TvProtocol {
   /// True once a live session exists. HTTP adapters report true after a
   /// successful reachability probe.
   bool get isConnected;
+  int get pairingCodeLength => 0;
+  bool get pairingCodeIsHex => false;
+  bool get supportsTextInput => true;
 
   Future<PairingResult> pair();
 
@@ -88,3 +91,4 @@ abstract class TvProtocol {
   /// Cheap liveness probe used by the reconnect loop.
   Future<bool> ping();
 }
+

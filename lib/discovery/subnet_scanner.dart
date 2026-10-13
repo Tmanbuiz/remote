@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../core/tv_device.dart';
+import 'platform_discovery.dart';
 
 /// Finds TVs by probing every address on the local /24 directly.
 ///
@@ -95,7 +96,21 @@ class SubnetScanner {
 
   /// Checks one address for each brand's control port, cheapest first.
   /// Identifies a single host, for an address the user typed in.
-  Future<TvDevice?> probeHost(String host) => _probeHost(host);
+  Future<TvDevice?> probeHost(String host, {TvBrand? platform}) async {
+    final cleaned = PlatformDiscovery.host(host);
+    if (platform == TvBrand.androidTv) {
+      if (await _isPortOpen(cleaned, 6466) || await _isPortOpen(cleaned, 6467)) {
+        return TvDevice(id: 'android-$cleaned', name: 'Google TV / Android TV ($cleaned)',
+          host: cleaned, brand: TvBrand.androidTv, port: 6466, protocolVersion: 2);
+      }
+      return null;
+    }
+    if (platform == TvBrand.vidaa) {
+      if (await _isPortOpen(cleaned, 36669)) return PlatformDiscovery.vidaa(_client, cleaned);
+      return null;
+    }
+    return _probeHost(cleaned);
+  }
 
   Future<TvDevice?> _probeHost(String host) async {
     // A closed TCP port answers fast, so gate the HTTP probes behind a plain
@@ -118,6 +133,11 @@ class SubnetScanner {
         port: 3000,
       );
     }
+    if (await _isPortOpen(host, 6466) || await _isPortOpen(host, 6467)) {
+      return TvDevice(id: 'android-$host', name: 'Google TV / Android TV ($host)',
+        host: host, brand: TvBrand.androidTv, port: 6466, protocolVersion: 2);
+    }
+    if (await _isPortOpen(host, 36669)) return PlatformDiscovery.vidaa(_client, host);
     return null;
   }
 
@@ -188,3 +208,4 @@ class SubnetScanner {
     }
   }
 }
+

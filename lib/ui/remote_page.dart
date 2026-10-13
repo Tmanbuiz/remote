@@ -59,7 +59,7 @@ class RemotePage extends StatelessWidget {
               const SizedBox(height: 20),
               const _TransportRow(),
               const SizedBox(height: 16),
-              const TextEntryBar(),
+              if (controller.supportsTextInput) const TextEntryBar(),
               const SizedBox(height: 16),
               const _ShortcutBar(),
               const _NumberPad(),
@@ -578,3 +578,4 @@ class _ErrorBanner extends StatelessWidget {
     );
   }
 }
+

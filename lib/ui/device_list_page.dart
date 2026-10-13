@@ -8,6 +8,7 @@ import '../core/tv_protocol.dart';
 import 'guide_page.dart';
 import 'remote_page.dart';
 import 'theme.dart';
+import 'pairing_code_dialog.dart';
 
 class DeviceListPage extends StatefulWidget {
   const DeviceListPage({super.key});
@@ -35,13 +36,15 @@ class _DeviceListPageState extends State<DeviceListPage> {
   Future<void> _addByAddress() async {
     final controller = context.read<RemoteController>();
     final field = TextEditingController();
+    final firmwareField = TextEditingController();
+    TvBrand? platform;
     final messenger = ScaffoldMessenger.of(context);
 
     final host = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) => AlertDialog(
         title: const Text('Add TV by address'),
-        content: Column(
+        content: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -61,8 +64,23 @@ class _DeviceListPageState extends State<DeviceListPage> {
               ),
               onSubmitted: (value) => Navigator.of(dialogContext).pop(value.trim()),
             ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<TvBrand>(
+              initialValue: platform,
+              decoration: const InputDecoration(labelText: 'TV platform'),
+              items: const [
+                DropdownMenuItem(value: null, child: Text('Detect automatically')),
+                DropdownMenuItem(value: TvBrand.androidTv, child: Text('Google TV / Android TV')),
+                DropdownMenuItem(value: TvBrand.vidaa, child: Text('VIDAA OS')),
+              ],
+              onChanged: (value) => setDialogState(() => platform = value),
+            ),
+            const SizedBox(height: 12),
+            TextField(controller: firmwareField,
+              decoration: const InputDecoration(labelText: 'Firmware / build (optional)',
+                hintText: 'Version shown in the TV About screen')),
           ],
-        ),
+        )),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
@@ -73,16 +91,17 @@ class _DeviceListPageState extends State<DeviceListPage> {
             child: const Text('Add'),
           ),
         ],
-      ),
+      )),
     );
-    field.dispose();
+    final firmware = firmwareField.text;
+    field.dispose(); firmwareField.dispose();
     if (host == null || host.isEmpty || !mounted) return;
 
-    final found = await controller.probe(host);
+    final found = await controller.probe(host, platform: platform, firmware: firmware);
     if (!mounted) return;
     if (found == null) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Nothing answered at $host')),
+        SnackBar(content: Text(controller.error ?? 'No supported TV control service answered at $host.')),
       );
       return;
     }
@@ -221,10 +240,22 @@ class _DeviceListPageState extends State<DeviceListPage> {
     }
 
     _showPairingDialog(device);
-    final result = await controller.pairAndSave(device);
+    var result = await controller.pairAndSave(device);
     if (!mounted) return;
     Navigator.of(context).pop(); // dismiss the pairing dialog
 
+    if (result.status == PairingStatus.pinRequired) {
+      final verified = await showDialog<PairingResult>(context: context,
+        barrierDismissible: false, builder: (_) => PairingCodeDialog(
+          tvName: device.displayName, length: controller.pairingCodeLength,
+          hex: controller.pairingCodeIsHex, message: result.message,
+          submit: controller.submitPairingPin));
+      if (verified == null) {
+        await controller.cancelPairing(); return;
+      }
+      result = verified;
+      if (!mounted) return;
+    }
     if (result.isSuccess) {
       _openRemote();
     } else {
@@ -251,7 +282,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         title: Text('Pairing with ${device.displayName}'),
-        content: const Row(
+        content: Row(
           children: [
             SizedBox(
               width: 24,
@@ -260,7 +291,9 @@ class _DeviceListPageState extends State<DeviceListPage> {
             ),
             SizedBox(width: 16),
             Expanded(
-              child: Text('Look at the TV and accept the permission prompt.'),
+              child: Text(device.brand == TvBrand.androidTv || device.brand == TvBrand.vidaa
+                ? 'Keep the TV on. A pairing code will appear on its screen.'
+                : 'Look at the TV and accept the permission prompt.'),
             ),
           ],
         ),
@@ -330,6 +363,10 @@ class _DeviceListPageState extends State<DeviceListPage> {
                   onTap: () => _connect(d),
                   onForget: () => controller.forget(d),
                   onRename: () => _rename(d),
+                  onPairAgain: () async {
+                    await controller.resetPairing(d);
+                    if (mounted) await _connect(d.copyWith(clearPairingToken: true));
+                  },
                 ),
               ),
             ],
@@ -376,12 +413,14 @@ class _DeviceTile extends StatelessWidget {
     required this.onTap,
     this.onForget,
     this.onRename,
+    this.onPairAgain,
   });
 
   final TvDevice device;
   final VoidCallback onTap;
   final VoidCallback? onForget;
   final VoidCallback? onRename;
+  final VoidCallback? onPairAgain;
 
   static const Map<TvBrand, IconData> _icons = {
     TvBrand.roku: Icons.cast,
@@ -390,6 +429,7 @@ class _DeviceTile extends StatelessWidget {
     TvBrand.sony: Icons.tv,
     TvBrand.vizio: Icons.tv,
     TvBrand.androidTv: Icons.android,
+    TvBrand.vidaa: Icons.tv,
     TvBrand.appleTv: Icons.apple,
     TvBrand.unknown: Icons.device_unknown,
   };
@@ -472,12 +512,21 @@ class _DeviceTile extends StatelessWidget {
                     onSelected: (value) {
                       if (value == 'rename') {
                         onRename?.call();
+                      } else if (value == 'pair') {
+                        onPairAgain?.call();
+                      } else if (value == 'details') {
+                        showDialog<void>(context: context, builder: (_) => AlertDialog(
+                          title: Text(device.displayName),
+                          content: SelectableText('${device.brand.label}\nAddress: ${device.host}\nModel: ${device.model ?? 'Not reported'}\nFirmware/build: ${device.firmwareVersion ?? 'Not reported'}\nRemote Service: ${device.serviceVersion ?? 'Not reported'}\nControl protocol: ${device.protocolVersion ?? 'Automatic'}'),
+                          actions: [TextButton(onPressed: () => Navigator.of(context, rootNavigator: true).pop(), child: const Text('Close'))]));
                       } else {
                         onForget!();
                       }
                     },
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'rename', child: Text('Rename')),
+                      PopupMenuItem(value: 'details', child: Text('TV details')),
+                      PopupMenuItem(value: 'pair', child: Text('Pair again')),
                       PopupMenuItem(value: 'forget', child: Text('Forget this TV')),
                     ],
                   ),
@@ -520,3 +569,4 @@ class _EmptyState extends StatelessWidget {
     );
   }
 }
+

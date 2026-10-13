@@ -7,7 +7,8 @@ enum TvBrand {
   lg('LG'),
   sony('Sony'),
   vizio('Vizio'),
-  androidTv('Android TV'),
+  androidTv('Google TV / Android TV'),
+  vidaa('VIDAA OS'),
   appleTv('Apple TV'),
   unknown('Unknown');
 
@@ -31,6 +32,9 @@ class TvDevice {
     this.model,
     this.macAddress,
     this.pairingToken,
+    this.firmwareVersion,
+    this.serviceVersion,
+    this.protocolVersion,
   });
 
   /// Stable across rediscovery — usually the UPnP USN or the set's serial.
@@ -58,6 +62,9 @@ class TvDevice {
   final String? macAddress;
 
   final String? pairingToken;
+  final String? firmwareVersion;
+  final String? serviceVersion;
+  final int? protocolVersion;
 
   /// What the interface shows, and what Siri matches a spoken name against.
   String get displayName =>
@@ -76,6 +83,10 @@ class TvDevice {
     String? model,
     String? macAddress,
     String? pairingToken,
+    bool clearPairingToken = false,
+    String? firmwareVersion,
+    String? serviceVersion,
+    int? protocolVersion,
   }) {
     return TvDevice(
       id: id,
@@ -86,7 +97,10 @@ class TvDevice {
       port: port ?? this.port,
       model: model ?? this.model,
       macAddress: macAddress ?? this.macAddress,
-      pairingToken: pairingToken ?? this.pairingToken,
+      pairingToken: clearPairingToken ? null : (pairingToken ?? this.pairingToken),
+      firmwareVersion: firmwareVersion ?? this.firmwareVersion,
+      serviceVersion: serviceVersion ?? this.serviceVersion,
+      protocolVersion: protocolVersion ?? this.protocolVersion,
     );
   }
 
@@ -100,6 +114,9 @@ class TvDevice {
         'model': model,
         'macAddress': macAddress,
         'pairingToken': pairingToken,
+        'firmwareVersion': firmwareVersion,
+        'serviceVersion': serviceVersion,
+        'protocolVersion': protocolVersion,
       };
 
   factory TvDevice.fromJson(Map<String, dynamic> json) => TvDevice(
@@ -115,6 +132,9 @@ class TvDevice {
         model: json['model'] as String?,
         macAddress: json['macAddress'] as String?,
         pairingToken: json['pairingToken'] as String?,
+        firmwareVersion: json['firmwareVersion'] as String?,
+        serviceVersion: json['serviceVersion'] as String?,
+        protocolVersion: json['protocolVersion'] as int?,
       );
 
   @override
@@ -126,3 +146,4 @@ class TvDevice {
   @override
   String toString() => 'TvDevice($displayName, ${brand.label}, $host)';
 }
+

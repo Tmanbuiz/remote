@@ -1,6 +1,9 @@
 import '../protocols/lg_protocol.dart';
 import '../protocols/roku_protocol.dart';
 import '../protocols/samsung_protocol.dart';
+import '../protocols/android_tv_protocol.dart';
+import '../protocols/vidaa_protocol.dart';
+import '../storage/credential_store.dart';
 import 'tv_device.dart';
 import 'tv_protocol.dart';
 
@@ -17,9 +20,12 @@ class ProtocolFactory {
         return SamsungProtocol(device);
       case TvBrand.lg:
         return LgProtocol(device);
+      case TvBrand.androidTv:
+        return AndroidTvProtocol(device);
+      case TvBrand.vidaa:
+        return VidaaProtocol(device);
       case TvBrand.sony:
       case TvBrand.vizio:
-      case TvBrand.androidTv:
       case TvBrand.appleTv:
       case TvBrand.unknown:
         throw UnimplementedError(
@@ -35,5 +41,14 @@ class ProtocolFactory {
     TvBrand.roku,
     TvBrand.samsung,
     TvBrand.lg,
+    TvBrand.androidTv,
+    TvBrand.vidaa,
   };
+
+  static Future<void> forgetCredentials(TvDevice device) async {
+    const store = SecureCredentialStore();
+    if (device.brand == TvBrand.androidTv) await store.delete('android-tv:${device.id}');
+    if (device.brand == TvBrand.vidaa) await store.delete('vidaa:${device.id}');
+  }
 }
+
