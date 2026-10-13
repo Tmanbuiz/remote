@@ -45,6 +45,8 @@ class AndroidTvProtocol extends TvProtocol {
   @override
   bool get isConnected => _session.isReady;
   @override
+  bool get supportsTextInput => isConnected && (_session.features & 4) != 0;
+  @override
   int get pairingCodeLength => 6;
   @override
   bool get pairingCodeIsHex => true;

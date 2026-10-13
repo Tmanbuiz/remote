@@ -12,8 +12,8 @@ ship it — see [Building without a Mac](#building-without-a-mac).
 | **LG** (webOS) | SSAP on 3000 + pointer socket | on-screen accept, client-key stored | Working, untested against hardware |
 | Sony Bravia | IRCC-IP, HTTP | PSK or PIN | Not written yet |
 | Vizio | HTTPS on 7345 | PIN shown on TV | Not written yet |
-| **Android TV / Google TV** | Remote Service v2, TLS/protobuf on 6466/6467 | 6-character hexadecimal TV code | Implemented; protocol/flow tests; physical-TV validation pending |
-| **VIDAA OS** | TV-local MQTT/TLS on 36669 | 4-digit TV PIN; firmware profiles | Implemented; protocol/flow tests; physical-TV validation pending |
+| **Android TV / Google TV** | Remote Service v2, TLS/protobuf on 6466/6467 | 6-character hexadecimal TV code | Implemented; tests added; runtime/hardware validation pending |
+| **VIDAA OS** | TV-local MQTT/TLS on 36669 | 4-digit TV PIN; firmware profiles | Implemented; tests added; runtime/hardware validation pending |
 | Apple TV | Companion (SRP + ChaCha20) | PIN | Not written yet — see below |
 
 Discovered sets whose brand has no adapter appear in the list marked

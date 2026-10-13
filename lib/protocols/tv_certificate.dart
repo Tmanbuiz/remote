@@ -19,11 +19,8 @@ class ClientIdentity {
     ..usePrivateKeyBytes(utf8.encode(privateKey));
 
   static Future<ClientIdentity> load(CredentialStore store) async {
-    var saved = await store.read('android-tv:identity');
-    if (saved == null) {
-      saved = await Isolate.run(_generate);
-      await store.write('android-tv:identity', saved);
-    }
+    final saved = await readOrCreateCredential(store, 'android-tv:identity',
+        () => Isolate.run(_generate));
     return ClientIdentity(saved['certificate'] as String, saved['privateKey'] as String);
   }
 

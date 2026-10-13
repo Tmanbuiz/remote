@@ -146,10 +146,13 @@ class RemoteController extends ChangeNotifier {
       final identified = found;
       // Prefer the saved record if this TV is already known, so a typed
       // address does not create a second entry without its pairing token.
-      return _saved.firstWhere(
+      final known = _saved.firstWhere(
         (d) => d.host == identified.host && d.brand == identified.brand,
         orElse: () => identified,
       );
+      return known.copyWith(model: identified.model,
+        firmwareVersion: identified.firmwareVersion,
+        protocolVersion: identified.protocolVersion);
     } on FormatException catch (e) {
       _error = e.message.toString(); return null;
     } catch (_) {

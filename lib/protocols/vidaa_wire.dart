@@ -43,7 +43,7 @@ class VidaaWire {
     int expiry(String prefix, int fallback) {
       final days = int.tryParse('${payload['${prefix}_duration_day']}') ?? fallback;
       final seconds = int.tryParse('${payload['${prefix}_time']}') ?? now.millisecondsSinceEpoch ~/ 1000;
-      return seconds * 1000 + days.clamp(1, 3650) * Duration.millisecondsPerDay;
+      return seconds * 1000 + days.clamp(1, 3650).toInt() * Duration.millisecondsPerDay;
     }
     return {
       'accessToken': payload['accesstoken'],

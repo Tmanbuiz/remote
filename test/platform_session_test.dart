@@ -69,6 +69,20 @@ class VidaaFixture implements VidaaTransport {
 }
 
 void main() {
+  test('overlapping identity requests share one creation and stored key', () async {
+    final store = MemoryCredentials();
+    final generated = Completer<Map<String, dynamic>>();
+    var creations = 0;
+    Future<Map<String, dynamic>> create() { creations++; return generated.future; }
+    final first = readOrCreateCredential(store, 'identity', create);
+    final second = readOrCreateCredential(store, 'identity', create);
+    await Future<void>.delayed(Duration.zero);
+    expect(creations, 1);
+    generated.complete({'certificate': 'one-test-identity'});
+    expect(await first, await second);
+    expect(store.values['identity']!['certificate'], 'one-test-identity');
+  });
+
   test('Android handshake retains the pairing socket, negotiates capabilities, and answers pings', () async {
     final clientPem = File('test/fixtures/android-client.pem').readAsStringSync();
     final serverPem = File('test/fixtures/android-server.pem').readAsStringSync();

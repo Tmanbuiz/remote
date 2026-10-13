@@ -73,7 +73,11 @@ Protocol vectors are checked against independent Python/cryptography results.
 Tests exercise fragmented/coalesced Android frames, certificate/PIN binding,
 handshake order, capabilities, live-session ownership, cancellation, VIDAA
 authorization, retained-message rejection, token persistence and reconnect.
-CI analyzes the Flutter code, runs tests and builds an Android ARM64 preview.
+The CI workflow is configured to analyze the Flutter code, run tests and build
+an Android ARM64 preview. The initial run was blocked by GitHub before any steps
+started: its annotation reports an account payment or spending-limit issue.
+Flutter tests, dependency resolution and APK compilation have therefore not yet
+run successfully for this change. No preview APK is available from that run.
 
 Physical Google/Android/VIDAA TVs were not available in the development workspace.
 The adapters need testing on each target TV and firmware; passing fixture tests
@@ -92,3 +96,8 @@ after one day to limit storage usage.
 - [Android pairing protocol](https://android.googlesource.com/platform/external/google-tv-pairing-protocol/)
 - [VIDAA protocol reference](https://github.com/tombabolewski/vidaa-control)
 - [Official VIDAA connection guide](https://www.vidaa.com/customer_support/how-can-i-connect-the-vidaa-app-to-my-tv/)
+
+If GitHub Actions is blocked, the existing Codemagic **Android APK** workflow
+can run analysis, tests and APK compilation on branch `codex/android-vidaa`.
+It requires access to the owner's Codemagic account; no build was started there
+during this change. The Android preview remains pending until a build succeeds.

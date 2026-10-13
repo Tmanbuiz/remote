@@ -117,14 +117,12 @@ class VidaaSession {
   bool get isReady => _authenticated && (_transport?.isConnected ?? false);
 
   Future<String> _uuid() async {
-    var record = await _store.read('vidaa:identity');
-    if (record == null) {
+    final record = await readOrCreateCredential(_store, 'vidaa:identity', () async {
       final random = Random.secure();
       final bytes = List.generate(6, (_) => random.nextInt(256));
       bytes[0] = (bytes[0] | 2) & 254;
-      record = {'uuid': bytes.map((v) => v.toRadixString(16).padLeft(2, '0')).join(':')};
-      await _store.write('vidaa:identity', record);
-    }
+      return {'uuid': bytes.map((v) => v.toRadixString(16).padLeft(2, '0')).join(':')};
+    });
     return record['uuid'] as String;
   }
 
@@ -200,6 +198,9 @@ class VidaaSession {
     final now = DateTime.now().millisecondsSinceEpoch;
     final accessExpired = (record['accessExpiresAt'] as int? ?? 0) <= now;
     final refresh = accessExpired && record['refreshToken'] is String;
+    if (accessExpired && record['accessToken'] is String && !refresh) {
+      throw RemoteAuthException('TV authorization expired. Pair this TV again.');
+    }
     if (refresh && (record['refreshExpiresAt'] as int? ?? 0) <= now) {
       throw RemoteAuthException('TV pairing expired. Pair this TV again.');
     }

@@ -9,6 +9,28 @@ abstract class CredentialStore {
   Future<void> delete(String key);
 }
 
+final _credentialLoads = Expando<Map<String, Future<Map<String, dynamic>>>>();
+
+/// A cancelled/overlapping pairing must not overwrite another TV's client key.
+Future<Map<String, dynamic>> readOrCreateCredential(CredentialStore store,
+    String key, Future<Map<String, dynamic>> Function() create) {
+  final pending = _credentialLoads[store] ??= {};
+  final existing = pending[key];
+  if (existing != null) return existing;
+  Future<Map<String, dynamic>> load() async {
+    final saved = await store.read(key);
+    if (saved != null) return saved;
+    final value = await create();
+    await store.write(key, value);
+    return value;
+  }
+  final result = load();
+  pending[key] = result;
+  return result.whenComplete(() {
+    if (identical(pending[key], result)) pending.remove(key);
+  });
+}
+
 class SecureCredentialStore implements CredentialStore {
   const SecureCredentialStore();
   static const _storage = FlutterSecureStorage();
