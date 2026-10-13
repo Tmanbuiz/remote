@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:universal_remote/core/remote_key.dart';
+import 'package:universal_remote/core/session_retry.dart';
 import 'package:universal_remote/protocols/audio_relay.dart';
 import 'package:universal_remote/protocols/private_listening.dart';
 import 'package:universal_remote/core/tv_device.dart';
@@ -356,6 +357,109 @@ group('Audio relay', () {
       expect(PrivateListening.buildApp('VDLY', 500000).length, 16);
       expect(PrivateListening.buildReceiverReport().length, 32);
       expect(PrivateListening.buildReceiverReport()[1], 201);
+    });
+  });
+
+  group('Reconnecting a session that died unseen', () {
+    // A stand-in for a socket whose open flag the TV or iOS can flip at any time.
+    late bool open;
+    late int reconnects;
+    late int calls;
+
+    setUp(() {
+      open = true;
+      reconnects = 0;
+      calls = 0;
+    });
+
+    Future<void> reconnect() async {
+      reconnects++;
+      open = true;
+    }
+
+    test('a healthy session is used as it is', () async {
+      final result = await withLiveSession<int>(
+        isOpen: () => open,
+        reconnect: reconnect,
+        action: () async => ++calls,
+      );
+      expect(result, 1);
+      expect(reconnects, 0);
+    });
+
+    test('a session already closed is rebuilt before the first attempt', () async {
+      open = false;
+      await withLiveSession<int>(
+        isOpen: () => open,
+        reconnect: reconnect,
+        action: () async => ++calls,
+      );
+      expect(reconnects, 1);
+      expect(calls, 1);
+    });
+
+    test('a failure that closed the session is rebuilt and retried once', () async {
+      final result = await withLiveSession<String>(
+        isOpen: () => open,
+        reconnect: reconnect,
+        action: () async {
+          calls++;
+          if (calls == 1) {
+            open = false; // the TV dropped the channel mid-request
+            throw RemoteTransportException('TV closed the channel.');
+          }
+          return 'ok';
+        },
+      );
+      expect(result, 'ok');
+      expect(calls, 2);
+      expect(reconnects, 1);
+    });
+
+    test('a TV that is alive but silent is not retried', () async {
+      // Retrying would make the user wait twice for the same refusal.
+      await expectLater(
+        withLiveSession<void>(
+          isOpen: () => open,
+          reconnect: reconnect,
+          action: () async {
+            calls++;
+            throw RemoteTransportException('TV did not answer.');
+          },
+        ),
+        throwsA(isA<RemoteTransportException>()),
+      );
+      expect(calls, 1);
+      expect(reconnects, 0);
+    });
+
+    test('only one retry: a second failure is reported, not looped', () async {
+      await expectLater(
+        withLiveSession<void>(
+          isOpen: () => open,
+          reconnect: reconnect,
+          action: () async {
+            calls++;
+            open = false;
+            throw RemoteTransportException('Remote session is not open.');
+          },
+        ),
+        throwsA(isA<RemoteTransportException>()),
+      );
+      expect(calls, 2);
+      expect(reconnects, 1);
+    });
+
+    test('errors that are not about the transport pass straight through', () async {
+      await expectLater(
+        withLiveSession<void>(
+          isOpen: () => open,
+          reconnect: reconnect,
+          action: () async => throw StateError('not on the same network'),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(reconnects, 0);
     });
   });
 }

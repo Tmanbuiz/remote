@@ -50,6 +50,7 @@ class PrivateListening {
   SimpleOpusDecoder? _decoder;
   InternetAddress? _tv;
   bool _running = false;
+  bool _askedTv = false;
   bool _heardAudio = false;
   int _packets = 0;
 
@@ -101,6 +102,30 @@ class PrivateListening {
   /// network, which is the ordinary case.
   Future<void> start(String tvHost, {String? relayHost}) async {
     if (_running) return;
+    _askedTv = false;
+    try {
+      await _begin(tvHost, relayHost: relayHost);
+    } catch (_) {
+      // A start that throws must not leave anything behind. Before this, the
+      // failure came after _running was already true, so the chip read
+      // "Listening" over a stream that never began, with the RTP port still
+      // bound and the player still open.
+      _running = false;
+      await _release();
+      if (_askedTv) {
+        // The TV may have registered us before the failure; leaving it
+        // registered is how a set ends up refusing further clients.
+        try {
+          await _session.stopAudioStream();
+        } catch (_) {
+          // The session is likely the thing that failed.
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _begin(String tvHost, {String? relayHost}) async {
     await _ensureOpus();
 
     _viaRelay = relayHost != null && relayHost.isNotEmpty;
@@ -161,6 +186,7 @@ class PrivateListening {
 
     // Tell the TV where to send it. Do this last: the stream can begin the
     // instant this returns, and dropping the first packets sounds like a fault.
+    _askedTv = true;
     await _session.startAudioStream(endpoint);
 
     if (_viaRelay) {
@@ -360,6 +386,16 @@ class PrivateListening {
   Future<void> stop() async {
     if (!_running) return;
     _running = false;
+    await _release();
+    try {
+      await _session.stopAudioStream();
+    } catch (_) {
+      // The TV returns to its speakers on its own when the stream stops.
+    }
+  }
+
+  /// Everything start() can have acquired, released idempotently.
+  Future<void> _release() async {
     _keepAliveTimer?.cancel();
     _keepAliveTimer = null;
     _sessionTimer?.cancel();
@@ -376,11 +412,6 @@ class PrivateListening {
       await FlutterPcmSound.release();
     } catch (_) {
       // Releasing a player that never started is not an error worth raising.
-    }
-    try {
-      await _session.stopAudioStream();
-    } catch (_) {
-      // The TV returns to its speakers on its own when the stream stops.
     }
   }
 }

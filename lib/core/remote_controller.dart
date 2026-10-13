@@ -11,6 +11,7 @@ import '../discovery/subnet_scanner.dart';
 import '../storage/device_store.dart';
 import 'protocol_factory.dart';
 import 'remote_key.dart';
+import 'session_retry.dart';
 import 'tv_device.dart';
 import 'tv_protocol.dart';
 import 'wake_on_lan.dart';
@@ -237,6 +238,24 @@ class RemoteController extends ChangeNotifier {
     }
   }
 
+  /// Runs a Roku session call, rebuilding the socket first if it died unseen.
+  ///
+  /// sendKey has always done this; the channel, search and listening calls did
+  /// not, so they failed on a stale socket the green dot still called connected.
+  Future<T> _live<T>(RokuProtocol protocol, Future<T> Function() action) {
+    return withLiveSession<T>(
+      isOpen: () => protocol.isConnected,
+      reconnect: () async {
+        await protocol.disconnect();
+        await protocol.connect();
+        _state = RemoteConnectionState.connected;
+        _error = null;
+        notifyListeners();
+      },
+      action: action,
+    );
+  }
+
   /// The TV's installed channels and inputs, or an empty list on a set whose
   /// protocol has no concept of them.
   ///
@@ -246,7 +265,7 @@ class RemoteController extends ChangeNotifier {
     final protocol = _active;
     if (protocol is! RokuProtocol) return const [];
     try {
-      return await protocol.fetchChannels();
+      return await _live(protocol, protocol.fetchChannels);
     } catch (e) {
       _error = 'Could not read the channel list';
       notifyListeners();
@@ -258,7 +277,7 @@ class RemoteController extends ChangeNotifier {
     final protocol = _active;
     if (protocol is! RokuProtocol) return false;
     try {
-      await protocol.launchChannel(channelId);
+      await _live(protocol, () => protocol.launchChannel(channelId));
       return true;
     } catch (e) {
       _error = 'Could not open that channel';
@@ -295,7 +314,7 @@ class RemoteController extends ChangeNotifier {
     final protocol = _active;
     if (protocol is! RokuProtocol) return;
     try {
-      await protocol.openSearch();
+      await _live(protocol, protocol.openSearch);
     } catch (e) {
       _error = 'Could not open search';
       notifyListeners();
@@ -331,8 +350,14 @@ class RemoteController extends ChangeNotifier {
           session.stop();
         };
         session.onFirstAudio = notifyListeners;
-        await session.start(protocol.device.host, relayHost: _relayHost);
+        await _live(
+          protocol,
+          () => session.start(protocol.device.host, relayHost: _relayHost),
+        );
       }
+    } on RemoteTransportException catch (e) {
+      // Not the raw exception name: this is shown to someone holding a remote.
+      _error = 'Private listening could not start: ${e.message}';
     } catch (e) {
       _error = '$e';
     }
