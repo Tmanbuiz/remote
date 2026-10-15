@@ -144,6 +144,7 @@ workflows:
         bundle_identifier: com.wiantribe.universalRemote
       vars:
         BUNDLE_ID: "com.wiantribe.universalRemote"
+        APP_APPLE_ID: "6822749631"
     scripts:
       - name: Install dependencies
         script: flutter pub get
@@ -153,6 +154,7 @@ workflows:
         script: flutter test
       - name: Set up signing
         script: |
+          set -e
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
@@ -161,8 +163,19 @@ workflows:
           xcode-project use-profiles
       - name: Build .ipa
         script: |
+          set -e
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID")
+          case "$LATEST_BUILD_NUMBER" in
+            ''|*[!0-9]*)
+              echo "App Store Connect returned an invalid build number" >&2
+              exit 1
+              ;;
+          esac
+          BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+          # Preserve the uploaded unsigned IPA's build number as the minimum.
+          if [ "$BUILD_NUMBER" -lt 2 ]; then BUILD_NUMBER=2; fi
           flutter build ipa --release \
-            --build-number=$(($(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID") + 1)) \
+            --build-number="$BUILD_NUMBER" \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
