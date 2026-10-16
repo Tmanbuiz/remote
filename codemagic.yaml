@@ -135,19 +135,20 @@ workflows:
     name: iOS TestFlight
     max_build_duration: 60
     instance_type: mac_mini_m2
+    # The `codemagic` App Store Connect key. It also exposes
+    # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER and
+    # APP_STORE_CONNECT_PRIVATE_KEY to the scripts below.
     integrations:
       app_store_connect: codemagic
     environment:
       <<: *env_versions
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.wiantribe.universalRemote
       vars:
         BUNDLE_ID: "com.wiantribe.universalRemote"
         # The numeric "Apple ID" of the app record in App Store Connect
         # ("Universal Remote by WianTribe"). It is also the number in the app's
         # App Store Connect URL: /apps/<this id>/distribution.
         APP_APPLE_ID: "6823485096"
+        TEAM_ID: "VDJPBJ666U"
     scripts:
       - name: Install dependencies
         script: flutter pub get
@@ -155,19 +156,63 @@ workflows:
         script: flutter analyze
       - name: Unit tests
         script: flutter test
-      - name: Set up signing
+      - name: Work out the build number
         script: |
-          keychain initialize
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-          keychain add-certificates
-          xcode-project use-profiles
-      - name: Build .ipa
+          set -e
+          # First upload: TestFlight has no builds yet, so start at 1.
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" 2>/dev/null || echo 0)
+          case "$LATEST" in ''|*[!0-9]*) LATEST=0 ;; esac
+          echo "BUILD_NUMBER=$((LATEST + 1))" >> "$CM_ENV"
+      - name: Prepare Apple cloud signing
+        # Apple manages the distribution certificate and App Store profile for
+        # the team in the cloud, so no certificate or profile has to be created
+        # or stored in Codemagic. xcodebuild authenticates with the API key.
         script: |
-          flutter build ipa --release \
-            --build-number=$(($(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID") + 1)) \
-            --export-options-plist=/Users/builder/export_options.plist
+          set -e
+          mkdir -p "$HOME/private_keys"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" \
+            > "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
+          cat > "$HOME/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>destination</key><string>export</string>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+      - name: Build and archive
+        script: |
+          set -e
+          # Generates the Flutter config and pods; signing happens next.
+          flutter build ios --release --no-codesign --build-number="$BUILD_NUMBER"
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/ios/Runner.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic
+      - name: Export signed .ipa
+        script: |
+          set -e
+          xcodebuild -exportArchive \
+            -archivePath build/ios/Runner.xcarchive \
+            -exportPath build/ios/ipa \
+            -exportOptionsPlist "$HOME/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
