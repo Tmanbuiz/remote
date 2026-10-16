@@ -170,8 +170,20 @@ workflows:
         script: |
           set -e
           mkdir -p "$HOME/private_keys"
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" \
-            > "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
+          # The key can reach us with its line breaks lost or written as a
+          # literal "\n", which xcodebuild rejects (invalidPEMDocument). Keep
+          # only the base64 body and rebuild a clean PEM file from it.
+          KEY_FILE="$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" | python3 -c '
+          import re, sys, textwrap
+          raw = sys.stdin.read().replace("\\n", "\n")
+          body = re.sub(r"-----[A-Z ]+-----|\s", "", raw)
+          print("-----BEGIN PRIVATE KEY-----")
+          print("\n".join(textwrap.wrap(body, 64)))
+          print("-----END PRIVATE KEY-----")
+          ' > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          head -c 27 "$KEY_FILE"; echo; wc -l < "$KEY_FILE"
           cat > "$HOME/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
