@@ -13,8 +13,9 @@ Bundle ID: `com.wiantribe.universalRemote` (camel case matters; it must match
 | Secondary category | Entertainment | |
 | Age rating | 4+ (no objectionable content; answer "None" to every question) | |
 | Price | Free | |
-| Support URL | https://wiantribe.com | |
-| Privacy Policy URL | https://wiantribe.com/privacy | |
+| Support URL | https://wiantribe.com/remote | |
+| Marketing URL | https://wiantribe.com/remote | |
+| Privacy Policy URL | https://wiantribe.com/remote/privacy | |
 | Copyright | 2026 WianTribe Inc. | |
 
 ## Promotional text (170, editable without a new review)
