@@ -18,6 +18,19 @@ ship it — see [Building without a Mac](#building-without-a-mac).
 Discovered sets whose brand has no adapter appear in the list marked
 "Not yet supported" rather than being hidden, so it is obvious what the app saw.
 
+### Also in the app
+
+- **Wake on LAN** — turn a TV on over Wi-Fi when it supports it (`lib/core/wake_on_lan.dart`)
+- **Private listening** — Roku TV audio streamed to the phone's headphones,
+  decoded from Opus and kept playing with the screen off
+  (`lib/protocols/private_listening.dart`)
+- **Voice search** — on-device speech recognition typed into the TV's search box
+- **Text entry** — type on the phone keyboard instead of the on-screen one
+- **Manual add** — enter a TV's IP address when discovery cannot see it
+
+Wake on LAN and private listening have unit tests; none of these extras has been
+checked against a range of real TVs yet.
+
 ### Why Roku uses ECP-2 and not plain HTTP
 
 Roku's documented HTTP interface — `POST /keypress/Home` on port 8060 — only
@@ -169,6 +182,13 @@ real hardware, particularly:
 - Samsung sets older than 2016 use a completely different (unencrypted, port
   55000) protocol that this adapter does not speak.
 - LG's pointer-socket path is the most likely thing to need adjustment.
+
+## Shipping to the App Store
+
+The listing text, review notes and privacy answers are in
+[`store/app-store-listing.md`](store/app-store-listing.md), with the exact steps
+that need an Apple account. The iOS target already carries a privacy manifest
+(`ios/Runner/PrivacyInfo.xcprivacy`) and the export-compliance flag.
 
 ## Permissions
 
