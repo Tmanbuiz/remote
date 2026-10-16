@@ -34,7 +34,7 @@ Tools  (alternative: Entertainment)
 atoyejet@gmail.com
 
 ## Privacy policy URL
-https://wiantribe.com/privacy   (host the file in store/privacy-policy.md there)
+https://wiantribe.com/remote/privacy   (host the file in store/privacy-policy.md there)
 
 ## Graphics still needed before submission
 • App icon 512×512 PNG (32-bit, with alpha)
