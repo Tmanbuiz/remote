@@ -110,10 +110,10 @@ Also record the 30-second screen video for App Review described above.
 
 1. **Join the Apple Developer Program** (https://developer.apple.com/programs/,
    US$99 per year, billed annually; enrolment can take a day or more).
-2. **Create the app record** in App Store Connect: New App, iOS, name
-   "Universal Remote by WianTribe", bundle ID `com.wiantribe.universalRemote`,
-   an SKU of your choice. Copy its numeric **Apple ID** from App Information and
-   put it in `codemagic.yaml` as `APP_APPLE_ID`.
+2. **App record: done.** "Universal Remote by WianTribe" exists in App Store
+   Connect with bundle ID `com.wiantribe.universalRemote`, SKU
+   `universal-remote-ios`, Apple ID `6823485096` (already in `codemagic.yaml`
+   as `APP_APPLE_ID`).
 3. **Connect Codemagic**: add this repo, connect your Apple Developer account
    under Teams > Code signing identities, and create an App Store Connect API
    key saved as the `codemagic` integration (see the header of `codemagic.yaml`).

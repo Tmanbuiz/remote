@@ -145,11 +145,9 @@ workflows:
       vars:
         BUNDLE_ID: "com.wiantribe.universalRemote"
         # The numeric "Apple ID" of the app record in App Store Connect
-        # (App Information -> General Information). It exists only after the
-        # app record is created, so it cannot be known ahead of time. Replace
-        # this placeholder, or override it in Codemagic's environment
-        # variables; the build number step below fails until it is real.
-        APP_APPLE_ID: "REPLACE_WITH_APP_STORE_CONNECT_APPLE_ID"
+        # ("Universal Remote by WianTribe"). It is also the number in the app's
+        # App Store Connect URL: /apps/<this id>/distribution.
+        APP_APPLE_ID: "6823485096"
     scripts:
       - name: Install dependencies
         script: flutter pub get
