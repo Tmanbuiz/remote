@@ -140,6 +140,9 @@ workflows:
     integrations:
       app_store_connect: codemagic
     environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.wiantribe.universalRemote
       <<: *env_versions
       vars:
         BUNDLE_ID: "com.wiantribe.universalRemote"
@@ -162,18 +165,11 @@ workflows:
           LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" 2>/dev/null || echo 0)
           case "$LATEST" in ''|*[!0-9]*) LATEST=0 ;; esac
           echo "BUILD_NUMBER=$((LATEST + 1))" >> "$CM_ENV"
-      - name: Set up code signing
-        # Codemagic's own tools use the `codemagic` App Store Connect key.
-        # (The key is not exposed to scripts as a usable file, so we do not
-        # hand it to xcodebuild ourselves.) --create makes the distribution
-        # certificate and App Store profile the first time.
+      - name: Apply code signing
+        # Uses the certificate and App Store profile stored in Codemagic under
+        # Teams > Code signing identities (see ios_signing above).
         script: |
           set -e
-          keychain initialize
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-          keychain add-certificates
           xcode-project use-profiles
       - name: Build signed .ipa
         script: |
