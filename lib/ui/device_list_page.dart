@@ -399,6 +399,8 @@ class _DeviceTile extends StatelessWidget {
     final supported = ProtocolFactory.supported.contains(device.brand);
     final subtitle = [
       device.brand.label,
+      if (device.brand == TvBrand.samsung || device.brand == TvBrand.lg)
+        'Experimental',
       if (device.model != null && device.model!.isNotEmpty) device.model!,
       device.host,
     ].join(' · ');
