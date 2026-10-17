@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const String kWianTribeUrl = 'https://wiantribe.com';
+const String kWianTribeUrl = 'https://wiantribe.com/remote';
 
 /// How to use the remote, plus who made it.
 ///
@@ -30,11 +30,12 @@ class GuidePage extends StatelessWidget {
           _Section(
             icon: Icons.tv,
             title: 'Which TVs work',
-            body: 'Roku, Samsung and LG smart TVs.\n\n'
+            body: 'Roku TVs and players are supported.\n\n'
                 'Roku needs nothing set up — the app uses the TV\'s own '
-                'authenticated channel. Samsung and LG ask you to accept a '
-                'prompt on the TV the first time, and that approval is '
-                'remembered.',
+                'authenticated channel.\n\n'
+                'Samsung and LG smart TVs are experimental and have not been '
+                'tested on every model. They ask you to accept a prompt on '
+                'the TV the first time, and that approval is remembered.',
           ),
           _Section(
             icon: Icons.keyboard,
@@ -153,7 +154,7 @@ class _WianTribeBanner extends StatelessWidget {
                   Icon(Icons.link, size: 16, color: theme.colorScheme.onPrimaryContainer),
                   const SizedBox(width: 6),
                   Text(
-                    'wiantribe.com',
+                    'wiantribe.com/remote',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onPrimaryContainer,
                       decoration: TextDecoration.underline,
