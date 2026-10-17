@@ -135,9 +135,8 @@ workflows:
     name: iOS TestFlight
     max_build_duration: 60
     instance_type: mac_mini_m2
-    # The `codemagic` App Store Connect key. It also exposes
-    # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER and
-    # APP_STORE_CONNECT_PRIVATE_KEY to the scripts below.
+    # The `codemagic` App Store Connect key, used by Codemagic's signing and
+    # publishing tools.
     integrations:
       app_store_connect: codemagic
     environment:
@@ -163,78 +162,25 @@ workflows:
           LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" 2>/dev/null || echo 0)
           case "$LATEST" in ''|*[!0-9]*) LATEST=0 ;; esac
           echo "BUILD_NUMBER=$((LATEST + 1))" >> "$CM_ENV"
-      - name: Prepare Apple cloud signing
-        # Apple manages the distribution certificate and App Store profile for
-        # the team in the cloud, so no certificate or profile has to be created
-        # or stored in Codemagic. xcodebuild authenticates with the API key.
+      - name: Set up code signing
+        # Codemagic's own tools use the `codemagic` App Store Connect key.
+        # (The key is not exposed to scripts as a usable file, so we do not
+        # hand it to xcodebuild ourselves.) --create makes the distribution
+        # certificate and App Store profile the first time.
         script: |
           set -e
-          mkdir -p "$HOME/private_keys"
-          # The key can reach us with its line breaks lost or written as a
-          # literal "\n", which xcodebuild rejects (invalidPEMDocument). Keep
-          # only the base64 body and rebuild a clean PEM file from it.
-          KEY_FILE="$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" | python3 -c '
-          import re, sys, textwrap
-          raw = sys.stdin.read().replace("\\n", "\n")
-          body = re.sub(r"-----[A-Z ]+-----|\s", "", raw)
-          print("-----BEGIN PRIVATE KEY-----")
-          print("\n".join(textwrap.wrap(body, 64)))
-          print("-----END PRIVATE KEY-----")
-          ' > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-          # Diagnostics only: sizes and shape, never the key itself.
-          echo "key variable length: ${#APP_STORE_CONNECT_PRIVATE_KEY} characters"
-          echo "key id: ${APP_STORE_CONNECT_KEY_IDENTIFIER}, issuer id length: ${#APP_STORE_CONNECT_ISSUER_ID}"
-          echo "key file lines: $(wc -l < "$KEY_FILE")"
-          openssl pkey -in "$KEY_FILE" -noout && echo "openssl: key parses" || echo "openssl: key does NOT parse"
-          # A real App Store Connect key is 5 lines (about 200 base64 characters).
-          if [ "$(wc -l < "$KEY_FILE")" -lt 5 ]; then
-            echo "The App Store Connect key in the 'codemagic' integration is cut off or empty."
-            echo "Delete the integration and add it again by uploading the .p8 file."
-            exit 1
-          fi
-          cat > "$HOME/ExportOptions.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>teamID</key><string>$TEAM_ID</string>
-            <key>signingStyle</key><string>automatic</string>
-            <key>destination</key><string>export</string>
-            <key>uploadSymbols</key><true/>
-          </dict>
-          </plist>
-          PLIST
-      - name: Build and archive
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Build signed .ipa
         script: |
           set -e
-          # Generates the Flutter config and pods; signing happens next.
-          flutter build ios --release --no-codesign --build-number="$BUILD_NUMBER"
-          xcodebuild archive \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath build/ios/Runner.xcarchive \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8" \
-            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic
-      - name: Export signed .ipa
-        script: |
-          set -e
-          xcodebuild -exportArchive \
-            -archivePath build/ios/Runner.xcarchive \
-            -exportPath build/ios/ipa \
-            -exportOptionsPlist "$HOME/ExportOptions.plist" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8" \
-            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+          flutter build ipa --release \
+            --build-number="$BUILD_NUMBER" \
+            --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
