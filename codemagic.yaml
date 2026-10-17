@@ -183,7 +183,17 @@ workflows:
           print("-----END PRIVATE KEY-----")
           ' > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
-          head -c 27 "$KEY_FILE"; echo; wc -l < "$KEY_FILE"
+          # Diagnostics only: sizes and shape, never the key itself.
+          echo "key variable length: ${#APP_STORE_CONNECT_PRIVATE_KEY} characters"
+          echo "key id: ${APP_STORE_CONNECT_KEY_IDENTIFIER}, issuer id length: ${#APP_STORE_CONNECT_ISSUER_ID}"
+          echo "key file lines: $(wc -l < "$KEY_FILE")"
+          openssl pkey -in "$KEY_FILE" -noout && echo "openssl: key parses" || echo "openssl: key does NOT parse"
+          # A real App Store Connect key is 5 lines (about 200 base64 characters).
+          if [ "$(wc -l < "$KEY_FILE")" -lt 5 ]; then
+            echo "The App Store Connect key in the 'codemagic' integration is cut off or empty."
+            echo "Delete the integration and add it again by uploading the .p8 file."
+            exit 1
+          fi
           cat > "$HOME/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
