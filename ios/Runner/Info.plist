@@ -90,8 +90,6 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_roku-rcp._tcp</string>
-		<string>_airplay._tcp</string>
-		<string>_googlecast._tcp</string>
 	</array>
 	<!-- TV control endpoints are plain HTTP and self-signed HTTPS on the LAN,
 	     so App Transport Security has to allow local networking. This does NOT

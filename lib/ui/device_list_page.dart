@@ -399,6 +399,8 @@ class _DeviceTile extends StatelessWidget {
     final supported = ProtocolFactory.supported.contains(device.brand);
     final subtitle = [
       device.brand.label,
+      if (device.brand == TvBrand.samsung || device.brand == TvBrand.lg)
+        'Experimental',
       if (device.model != null && device.model!.isNotEmpty) device.model!,
       device.host,
     ].join(' · ');
@@ -511,7 +513,10 @@ class _EmptyState extends StatelessWidget {
           Text(
             scanning
                 ? 'Looking for TVs…'
-                : (message ?? 'No new TVs found on this network.'),
+                : (message ??
+                    'No new TVs found on this network.\n\n'
+                        'Check that your phone and TV are on the same Wi-Fi, '
+                        'or add your TV by its IP address.'),
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
