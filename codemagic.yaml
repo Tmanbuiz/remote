@@ -135,9 +135,109 @@ workflows:
     name: iOS TestFlight
     max_build_duration: 60
     instance_type: mac_mini_m2
-    # The `codemagic` App Store Connect key. It also exposes
-    # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER and
-    # APP_STORE_CONNECT_PRIVATE_KEY to the scripts below.
+    # The `codemagic` App Store Connect key, used by Codemagic's signing and
+    # publishing tools.
+    integrations:
+      app_store_connect: codemagic
+    environment:
+      <<: *env_versions
+      vars:
+        BUNDLE_ID: "com.wiantribe.universalRemote"
+        # The numeric "Apple ID" of the app record in App Store Connect
+        # ("Universal Remote by WianTribe"). It is also the number in the app's
+        # App Store Connect URL: /apps/<this id>/distribution.
+        APP_APPLE_ID: "6823485096"
+        TEAM_ID: "VDJPBJ666U"
+    scripts:
+      - name: Install dependencies
+        script: flutter pub get
+      - name: Static analysis
+        script: flutter analyze
+      - name: Unit tests
+        script: flutter test
+      - name: Work out the build number
+        script: |
+          set -e
+          # First upload: TestFlight has no builds yet, so start at 1.
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID" 2>/dev/null || echo 0)
+          case "$LATEST" in ''|*[!0-9]*) LATEST=0 ;; esac
+          echo "BUILD_NUMBER=$((LATEST + 1))" >> "$CM_ENV"
+      - name: Set up code signing
+        # Codemagic's own tools use the `codemagic` App Store Connect key.
+        # (The key is not exposed to scripts as a usable file, so we do not
+        # hand it to xcodebuild ourselves.) --create makes the distribution
+        # certificate and App Store profile the first time.
+        script: |
+          set -e
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Build signed .ipa
+        script: |
+          set -e
+          flutter build ipa --release \
+            --build-number="$BUILD_NUMBER" \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+
+  ios-debug:
+    name: iOS ad-hoc build (install on your own iPhone)
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    environment:
+      <<: *env_versions
+      ios_signing:
+        distribution_type: ad_hoc
+        bundle_identifier: com.wiantribe.universalRemote
+      vars:
+        BUNDLE_ID: "com.wiantribe.universalRemote"
+    scripts:
+      - name: Install dependencies
+        script: flutter pub get
+
+      - name: Static analysis
+        script: flutter analyze
+
+      - name: Unit tests
+        script: flutter test
+
+      - name: Set up signing
+        script: |
+          # Pulls the ad-hoc profile Codemagic generated and points Xcode at it.
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_ADHOC \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Build .ipa
+        script: |
+          flutter build ipa --release \
+            --build-number=$PROJECT_BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - flutter_drive.log
+    publishing:
+      email:
+        recipients:
+          # Where the .ipa download link is sent when this workflow finishes.
+          - atoyejet@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  ios-testflight:
+    name: iOS TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    # The `codemagic` App Store Connect key, used by Codemagic's signing and
+    # publishing tools.
     integrations:
       app_store_connect: codemagic
     environment:
